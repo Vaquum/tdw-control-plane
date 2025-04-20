@@ -1,4 +1,4 @@
 locations:
 - code_source:
-    module_name: quickstart_etl.definitions
+    module_name: tdw_control_plane.definitions
   location_name: trades-warehouse
