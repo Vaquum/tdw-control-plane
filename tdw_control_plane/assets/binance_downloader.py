@@ -17,8 +17,12 @@ def binance_btc_trades_file(context):
     """
     Downloads Binance BTC trade data file for a specific date.
     """
+    # Get the base storage directory from environment
+    local_storage_dir = os.environ.get("LOCAL_STORAGE_DIR", "/opt/binance_data")
+    
     # Create directory for zip files if it doesn't exist
-    os.makedirs("zips", exist_ok=True)
+    zips_dir = os.path.join(local_storage_dir, "zips")
+    os.makedirs(zips_dir, exist_ok=True)
     
     # Base URL for Binance data
     base_url = "https://data.binance.vision/data/spot/daily/trades/BTCUSDT/"
@@ -39,7 +43,7 @@ def binance_btc_trades_file(context):
     file_url = base_url + filename
     
     # Path to save the zip file
-    zip_path = os.path.join("zips", filename)
+    zip_path = os.path.join(zips_dir, filename)
     
     # Log the start of download
     context.log.info(f"Downloading {filename} from {file_url}")
@@ -53,7 +57,7 @@ def binance_btc_trades_file(context):
         with open(zip_path, 'wb') as f:
             f.write(response.content)
         
-        context.log.info(f"Successfully downloaded {filename}")
+        context.log.info(f"Successfully downloaded {filename} to {zip_path}")
         return {"filename": filename, "path": zip_path, "date": date_str}
         
     except requests.exceptions.HTTPError as e:
