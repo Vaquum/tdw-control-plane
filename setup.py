@@ -10,6 +10,7 @@ setup(
         "pandas",
         "requests",
         "matplotlib",
+        "clickhouse-driver",
     ],
     extras_require={"dev": ["dagster-webserver", "pytest"]},
 )
