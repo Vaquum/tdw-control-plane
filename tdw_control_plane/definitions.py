@@ -6,7 +6,7 @@ from .assets.daily_trades_to_clickhouse import daily_trades_to_clickhouse
 # Define the daily pipeline job
 daily_pipeline_job = define_asset_job(
     name="daily_binance_pipeline",
-    selection=["validated_binance_daily_pipeline"]
+    selection=["daily_trades_to_clickhouse"]
 )
 
 # Schedule to run daily at 1:00 AM UTC
@@ -20,7 +20,7 @@ def daily_pipeline_schedule():
 
 # Create the Dagster definitions
 defs = Definitions(
-    assets=[validated_binance_daily_pipeline],
+    assets=[daily_trades_to_clickhouse],
     schedules=[daily_pipeline_schedule],
     jobs=[daily_pipeline_job]
 )
