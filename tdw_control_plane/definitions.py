@@ -1,18 +1,12 @@
 from dagster import Definitions, define_asset_job, schedule
 
-# Import assets
-from .assets.binance_downloader import binance_btc_trades_file
-from .assets.binance_extractor import extract_binance_trades
-from .assets.clickhouse_loader import load_to_clickhouse
+# Import the single asset that handles everything
+from .assets.daily_trades_to_clickhouse import daily_trades_to_clickhouse
 
 # Define the daily pipeline job
 daily_pipeline_job = define_asset_job(
     name="daily_binance_pipeline",
-    selection=[
-        "binance_btc_trades_file", 
-        "extract_binance_trades", 
-        "load_to_clickhouse"
-    ]
+    selection=["validated_binance_daily_pipeline"]
 )
 
 # Schedule to run daily at 1:00 AM UTC
@@ -26,11 +20,7 @@ def daily_pipeline_schedule():
 
 # Create the Dagster definitions
 defs = Definitions(
-    assets=[
-        binance_btc_trades_file, 
-        extract_binance_trades, 
-        load_to_clickhouse
-    ],
+    assets=[validated_binance_daily_pipeline],
     schedules=[daily_pipeline_schedule],
     jobs=[daily_pipeline_job]
 )
