@@ -1,23 +1,19 @@
 import os
 import requests
 from datetime import datetime, timedelta
-from dagster import asset, AssetExecutionContext, DailyPartitionsDefinition
+from dagster import asset, DailyPartitionsDefinition
 
-
-# Create a daily partition definition starting from when data is available
+# Create a daily partition definition
 daily_partitions = DailyPartitionsDefinition(
-    start_date="2017-08-17"  # Starting from the earliest date in your original code
+    start_date="2017-08-17"
 )
-
 
 @asset(
     partitions_def=daily_partitions,
     group_name="binance_data",
-    description="Downloads Binance BTC trade data files",
-    compute_kind="python",
-    io_manager_key="io_manager"
+    description="Downloads Binance BTC trade data files"
 )
-def binance_btc_trades_file(context: AssetExecutionContext):
+def binance_btc_trades_file(context):
     """
     Downloads Binance BTC trade data file for a specific date.
     """
@@ -58,7 +54,7 @@ def binance_btc_trades_file(context: AssetExecutionContext):
             f.write(response.content)
         
         context.log.info(f"Successfully downloaded {filename}")
-        return {"filename": filename, "status": "downloaded", "path": zip_path}
+        return {"filename": filename, "path": zip_path, "date": date_str}
         
     except requests.exceptions.HTTPError as e:
         if e.response.status_code == 404:
