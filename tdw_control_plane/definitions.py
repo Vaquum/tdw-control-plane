@@ -1,30 +1,36 @@
-from dagster import Definitions, ScheduleDefinition, define_asset_job
-from dagster.core.storage.fs_io_manager import fs_io_manager
-from .assets.binance_downloader import binance_btc_trades_file
+from dagster import Definitions, define_asset_job, schedule
 
+# Import assets
+from tdw_control_plane.assets.binance_downloader import binance_btc_trades_file
+from tdw_control_plane.assets.binance_extractor import extract_binance_trades
+from tdw_control_plane.assets.clickhouse_loader import load_to_clickhouse
 
-# Define a job that will download the previous day's data
-daily_download_job = define_asset_job(
-    name="daily_binance_download",
-    selection="binance_btc_trades_file"
+# Define the daily pipeline job
+daily_pipeline_job = define_asset_job(
+    name="daily_binance_pipeline",
+    selection=[
+        "binance_btc_trades_file", 
+        "extract_binance_trades", 
+        "load_to_clickhouse"
+    ]
 )
-
 
 # Schedule to run daily at 1:00 AM UTC
-daily_download_schedule = ScheduleDefinition(
-    name="daily_binance_download_schedule",
+@schedule(
+    job=daily_pipeline_job,
     cron_schedule="0 1 * * *",
-    job=daily_download_job,
     execution_timezone="UTC"
 )
-
+def daily_pipeline_schedule():
+    return {}
 
 # Create the Dagster definitions
 defs = Definitions(
-    assets=[binance_btc_trades_file],
-    schedules=[daily_download_schedule],
-    jobs=[daily_download_job],
-    resources={
-        "io_manager": fs_io_manager
-    }
+    assets=[
+        binance_btc_trades_file, 
+        extract_binance_trades, 
+        load_to_clickhouse
+    ],
+    schedules=[daily_pipeline_schedule],
+    jobs=[daily_pipeline_job]
 )
