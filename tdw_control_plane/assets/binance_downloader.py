@@ -13,7 +13,7 @@ daily_partitions = DailyPartitionsDefinition(
     description="Extracts data from the downloaded zip file",
     deps=["binance_btc_trades_file"]
 )
-def extract_binance_trades(context, binance_btc_trades_file):
+def binance_btc_trades_file(context, binance_btc_trades_file):
     """
     Extracts trade data from the downloaded zip file.
     """
