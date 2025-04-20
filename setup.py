@@ -8,6 +8,7 @@ setup(
         "dagster-cloud",
         "boto3",
         "pandas",
+        "requests",
         "matplotlib",
     ],
     extras_require={"dev": ["dagster-webserver", "pytest"]},
