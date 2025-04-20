@@ -1,9 +1,9 @@
 from dagster import Definitions, define_asset_job, schedule
 
 # Import assets
-from tdw_control_plane.assets.binance_downloader import binance_btc_trades_file
-from tdw_control_plane.assets.binance_extractor import extract_binance_trades
-from tdw_control_plane.assets.clickhouse_loader import load_to_clickhouse
+from .assets.binance_downloader import binance_btc_trades_file
+from .assets.binance_extractor import extract_binance_trades
+from .assets.clickhouse_loader import load_to_clickhouse
 
 # Define the daily pipeline job
 daily_pipeline_job = define_asset_job(
