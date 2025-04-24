@@ -154,7 +154,8 @@ def _process_month(context, month_str):
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
             compression=True,
-            connect_timeout=300
+            connect_timeout=60,
+            send_receive_timeout=300,
         )
         
         # Check if data already exists for this month
