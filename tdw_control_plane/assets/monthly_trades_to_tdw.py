@@ -34,51 +34,64 @@ def insert_monthly_binance_trades_to_tdw(context):
     results = []
     
     for month_str in month_strings:
-        result = _process_month(month_str)
+        context.log.info(f"Processing month data: {month_str}")
+        result = _process_month(context, month_str)
         results.append(result)
         
     return results
 
-def _process_month(month_str):
+def _process_month(context, month_str):
     base_url = 'https://data.binance.vision/data/spot/monthly/trades/BTCUSDT/'
     file_url = base_url + month_str
     checksum_url = file_url + '.CHECKSUM'
     
     # Download and verify checksum
+    context.log.info(f"Downloading checksum from {checksum_url}")
     checksum_response = requests.get(checksum_url)
     checksum_response.raise_for_status()
     
     expected_checksum = checksum_response.text.split()[0].strip()
+    context.log.info(f"Expected checksum: {expected_checksum}")
 
+    context.log.info(f"Downloading trade data from {file_url}")
     response = requests.get(file_url)
     response.raise_for_status()
     zip_data = response.content
+    context.log.info(f"Downloaded {len(zip_data)/1024/1024:.2f} MB of data")
     
     actual_checksum = hashlib.sha256(zip_data).hexdigest()
+    context.log.info(f"Actual checksum: {actual_checksum}")
     if actual_checksum != expected_checksum:
+        context.log.error(f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}")
         raise ValueError(f'Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}')
     
     csv_content = None
     csv_filename = None
     
     # Extract CSV from zip file
+    context.log.info("Extracting CSV from zip file")
     with zipfile.ZipFile(BytesIO(zip_data)) as zip_ref:
         csv_filename = zip_ref.namelist()[0]
+        context.log.info(f"Found CSV file: {csv_filename}")
         
         with zip_ref.open(csv_filename) as csv_file:
             csv_content = csv_file.read()
     
     # Calculate CSV checksum
     csv_checksum = hashlib.sha256(csv_content).hexdigest()
+    context.log.info(f"CSV checksum: {csv_checksum}")
     
     # Parse CSV data
+    context.log.info("Parsing CSV data")
     data = []
     
     csv_text = csv_content.decode('utf-8')
     reader = csv.reader(csv_text.splitlines())
     headers = next(reader)
     
+    row_count = 0
     for row in reader:
+        row_count += 1
         trade_id = int(row[0])
         price = float(row[1])
         quantity = float(row[2])
@@ -104,6 +117,8 @@ def _process_month(month_str):
             dt
         ))
     
+    context.log.info(f"Parsed {row_count} rows from CSV")
+    
     # Clear large variables to help garbage collection
     csv_text = None
     csv_content = None
@@ -122,20 +137,26 @@ def _process_month(month_str):
     
     month = month.zfill(2)
     month_start = f'{year}-{month}-01'
+    context.log.info(f"Month start date: {month_start}")
     
     # Connect to ClickHouse
     client = None
     try:
+        context.log.info(f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}")
         client = ClickhouseClient(
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
-            settings={'timeout': 300, 'timeout_overflow_mode': 'break'}
+            settings={
+                'timeout': 300,
+                'timeout_overflow_mode': 'throw'  # Must be 'throw' to be compatible with query cache
+            }
         )
         
         # Check if data already exists for this month
+        context.log.info(f"Checking for existing data for {month_start}")
         check_result = client.execute(f'''
             SELECT count(*)
             FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
@@ -147,15 +168,16 @@ def _process_month(month_str):
         
         # If data exists, delete it before inserting new data
         if existing_count > 0:
-            print(f"Found {existing_count} existing records for {month_start}. Deleting before reinserting.")
+            context.log.info(f"Found {existing_count} existing records for {month_start}. Deleting before reinserting.")
             client.execute(f'''
                 ALTER TABLE {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE} 
                 DELETE WHERE datetime >= toDate('{month_start}')
                 AND datetime < addMonths(toDate('{month_start}'), 1)
             ''')
-            print(f"Deleted existing data for {month_start}")
+            context.log.info(f"Deleted existing data for {month_start}")
         
         # Insert data
+        context.log.info(f"Inserting {len(data)} rows into ClickHouse")
         client.execute(
             f'''
             INSERT INTO {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
@@ -172,8 +194,10 @@ def _process_month(month_str):
             ''',
             data
         )
+        context.log.info("Data insertion completed")
         
         # Verify insertion
+        context.log.info("Verifying data insertion")
         result = client.execute(f'''
             SELECT count(*)
             FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
@@ -181,8 +205,10 @@ def _process_month(month_str):
             AND datetime <  addMonths(toDate('{month_start}'), 1)
         ''')
         inserted_count = result[0][0]
+        context.log.info(f"Found {inserted_count} rows in ClickHouse after insertion")
 
         # Get quick stats instead of expensive hash
+        context.log.info("Computing verification statistics")
         stats_result = client.execute(f'''
             SELECT 
                 min(trade_id),
@@ -200,8 +226,10 @@ def _process_month(month_str):
             'avg_price': stats_result[0][2],
             'id_uniqueness_check': stats_result[0][3]
         }
+        context.log.info(f"Data verification stats: {data_verification}")
         
         if inserted_count != len(data):
+            context.log.error(f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}")
             raise ValueError(f'Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}')
         
         result_data = {
@@ -212,7 +240,7 @@ def _process_month(month_str):
             'data_verification': data_verification
         }
         
-        print(result_data)
+        context.log.info(f"Successfully processed {month_str}")
         return result_data
         
     except Exception as e:
