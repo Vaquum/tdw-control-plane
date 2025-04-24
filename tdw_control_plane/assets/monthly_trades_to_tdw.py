@@ -149,10 +149,7 @@ def _process_month(context, month_str):
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
-            settings={
-                'timeout': 300,
-                'timeout_overflow_mode': 'throw'  # Must be 'throw' to be compatible with query cache
-            }
+            compression=True  # Enable LZ4 compression for efficient data transfer
         )
         
         # Check if data already exists for this month
