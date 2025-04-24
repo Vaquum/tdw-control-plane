@@ -28,9 +28,12 @@ monthly_partitions = MonthlyPartitionsDefinition(
 )
 
 def insert_monthly_binance_trades_to_tdw(context):
-    # Get the selected partition key (YYYY-MM format)
+    # Get the selected partition key (YYYY-MM-DD format)
     partition_date_str = context.asset_partition_key_for_output()
-    year, month = partition_date_str.split('-')
+    
+    # Extract just the year and month parts (first two elements)
+    date_parts = partition_date_str.split('-')
+    year, month = date_parts[0], date_parts[1]
     
     # Generate the month string for the selected partition
     month_str = f'BTCUSDT-trades-{year}-{month}.zip'
