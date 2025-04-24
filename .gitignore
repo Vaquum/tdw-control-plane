@@ -19,3 +19,6 @@ coverage.xml
 *.cover
 pytest.ini
 .pytest_cache/ 
+
+storage
+logs

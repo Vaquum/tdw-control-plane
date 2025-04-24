@@ -1,0 +1,114 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./init-scripts:/docker-entrypoint-initdb.d
+      - ./clickhouse-config.xml:/etc/clickhouse-server/users.d/user_settings.xml
+    environment:
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_PASSWORD=password123
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  metabase:
+    image: metabase/metabase-enterprise:latest
+    ports:
+      - "3000:3000"
+    environment:
+      - MB_DB_TYPE=h2
+      - MB_PLUGINS_DIR=/plugins
+      - MB_ENABLE_EMBEDDING=true
+    volumes:
+      - metabase-data:/metabase-data
+      - ./plugins:/plugins
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    environment:
+      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    restart: unless-stopped
+
+  tabix:
+    image: spoonest/clickhouse-tabix-web-client:latest
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+
+  dagit:
+    build: .
+    image: trades-warehouse-dagster:latest
+    ports:
+      - "4000:3000"
+    environment:
+      - DAGSTER_HOME=/opt/app
+      - PYTHONPATH=/opt/app
+    volumes:
+      - .:/opt/app
+      - dagster-instance:/opt/dagster-instance
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    command: dagit -h 0.0.0.0 -p 3000
+    restart: unless-stopped
+
+  dagster:
+    build: .
+    image: trades-warehouse-dagster:latest
+    environment:
+      - DAGSTER_HOME=/opt/app
+      - PYTHONPATH=/opt/app
+    volumes:
+      - .:/opt/app
+      - dagster-instance:/opt/dagster-instance
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    command: dagster-daemon run
+    restart: unless-stopped
+
+  jupyter:
+    build: .
+    image: trades-warehouse-dagster:latest
+    network_mode: "host"
+    ports:
+      - "9999:8888"
+    working_dir: /opt/app/notebooks
+    environment:
+      - PYTHONPATH=/opt/app
+    volumes:
+      - .:/opt/app
+      - dagster-instance:/opt/dagster-instance
+      - /home/mikko/work-in-progress/vaquum_tools/:/vaquum_tools
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    command: >
+      bash -lc "jupyter lab --ip=0.0.0.0 --no-browser --allow-root \
+      --NotebookApp.token='' --NotebookApp.password=''"
+    restart: unless-stopped
+
+volumes:
+  clickhouse-data:
+  metabase-data:
+  grafana-data:
+  dagster-instance:
