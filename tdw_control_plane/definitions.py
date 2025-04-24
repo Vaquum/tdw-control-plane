@@ -6,22 +6,22 @@ from .assets.create_tdw_database import create_tdw_database
 from .assets.create_binance_trades_table import create_binance_trades_table
 
 create_tdw_database_job = define_asset_job(
-    name="create_tdw_database",
+    name="create_tdw_database_job",
     selection=["create_tdw_database"]
 )
 
 create_binance_trades_table_job = define_asset_job(
-    name="create_binance_trades_table",
+    name="create_binance_trades_table_job",
     selection=["create_binance_trades_table"]
 )
 
 insert_monthly_binance_trades_job = define_asset_job(
-    name="insert_monthly_trades_to_tdw",
+    name="insert_monthly_trades_to_tdw_job",
     selection=["insert_monthly_binance_trades_to_tdw"]
 )
 
 insert_daily_binance_trades_job = define_asset_job(
-    name="insert_daily_trades_to_tdw",
+    name="insert_daily_trades_to_tdw_job",
     selection=["insert_daily_binance_trades_to_tdw"]
 )
 
