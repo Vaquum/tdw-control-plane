@@ -105,6 +105,8 @@ def _process_month(context, month_str):
             dt = datetime.fromtimestamp(timestamp / 1000.0)
         elif len(str(timestamp)) == 16:
             dt = datetime.fromtimestamp(timestamp / 1000000.0)
+        else:
+            raise ValueError(f"Invalid timestamp length: {timestamp}")
         
         data.append((
             trade_id,
