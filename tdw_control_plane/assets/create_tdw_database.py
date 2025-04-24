@@ -27,7 +27,7 @@ def create_tdw_database(context: AssetExecutionContext):
         )
         
         # Check if database exists
-        result = client.execute("SHOW DATABASES LIKE %s", (CLICKHOUSE_DATABASE,))
+        result = client.execute(f"SHOW DATABASES LIKE '{CLICKHOUSE_DATABASE}'")
         if not result:
             # Create the database with optimal settings
             client.execute(f"""
