@@ -1,5 +1,9 @@
 # Changelog
 
+## 15:42 on 12-08-2024
+
+- Fixed monthly partition handling in monthly_trades_to_tdw.py to only process the selected partition instead of all months
+
 ## 16:23 on 09-08-2024
 
 - Versioned release with `clickhouse-cityhash` moved to core dependencies
