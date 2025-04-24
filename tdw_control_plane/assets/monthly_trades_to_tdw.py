@@ -28,17 +28,18 @@ monthly_partitions = MonthlyPartitionsDefinition(
 )
 
 def insert_monthly_binance_trades_to_tdw(context):
-    # For initial database build, process all months from 2019 to present
-    # Generate a list of all months to process
-    month_strings = _generate_month_strings()
-    results = []
+    # Get the selected partition key (YYYY-MM format)
+    partition_date_str = context.asset_partition_key_for_output()
+    year, month = partition_date_str.split('-')
     
-    for month_str in month_strings:
-        context.log.info(f"Processing month data: {month_str}")
-        result = _process_month(context, month_str)
-        results.append(result)
-        
-    return results
+    # Generate the month string for the selected partition
+    month_str = f'BTCUSDT-trades-{year}-{month}.zip'
+    context.log.info(f"Processing selected partition: {partition_date_str}, file: {month_str}")
+    
+    # Process only the selected month
+    result = _process_month(context, month_str)
+    
+    return result
 
 def _process_month(context, month_str):
     base_url = 'https://data.binance.vision/data/spot/monthly/trades/BTCUSDT/'
