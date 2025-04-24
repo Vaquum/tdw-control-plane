@@ -23,7 +23,7 @@ def create_tdw_database(context: AssetExecutionContext):
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD
+            password=CLICKHOUSE_PASSWORD,
         )
         
         # Check if database exists

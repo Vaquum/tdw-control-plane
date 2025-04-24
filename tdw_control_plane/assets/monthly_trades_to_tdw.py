@@ -103,8 +103,10 @@ def _process_month(context, month_str):
         # Binance started with milliseconds, then switched to microseconds
         if len(str(timestamp)) == 13:
             dt = datetime.fromtimestamp(timestamp / 1000.0)
+        
         elif len(str(timestamp)) == 16:
             dt = datetime.fromtimestamp(timestamp / 1000000.0)
+        
         else:
             raise ValueError(f"Invalid timestamp length: {timestamp}")
         
@@ -151,7 +153,7 @@ def _process_month(context, month_str):
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
-            compression=True  # Enable LZ4 compression for efficient data transfer
+            compression=True
         )
         
         # Check if data already exists for this month
