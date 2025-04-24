@@ -11,6 +11,7 @@ setup(
         "requests",
         "matplotlib",
         "clickhouse-driver",
+        "lz4>=4.0.0"
     ],
     extras_require={"dev": ["dagster-webserver", "pytest"]},
 )
