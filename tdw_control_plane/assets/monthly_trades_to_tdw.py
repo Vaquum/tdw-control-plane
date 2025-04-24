@@ -135,6 +135,26 @@ def _process_month(month_str):
             settings={'timeout': 300, 'timeout_overflow_mode': 'break'}
         )
         
+        # Check if data already exists for this month
+        check_result = client.execute(f'''
+            SELECT count(*)
+            FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
+            WHERE datetime >= toDate('{month_start}')
+            AND datetime < addMonths(toDate('{month_start}'), 1)
+        ''')
+        
+        existing_count = check_result[0][0]
+        
+        # If data exists, delete it before inserting new data
+        if existing_count > 0:
+            print(f"Found {existing_count} existing records for {month_start}. Deleting before reinserting.")
+            client.execute(f'''
+                ALTER TABLE {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE} 
+                DELETE WHERE datetime >= toDate('{month_start}')
+                AND datetime < addMonths(toDate('{month_start}'), 1)
+            ''')
+            print(f"Deleted existing data for {month_start}")
+        
         # Insert data
         client.execute(
             f'''
