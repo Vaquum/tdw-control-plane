@@ -143,7 +143,7 @@ def insert_daily_binance_trades_to_tdw(context):
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
-            compression=False  # Disable compression to avoid clickhouse-cityhash dependency
+            compression=True  # Disable compression to avoid clickhouse-cityhash dependency
         )
         
         # Check if data already exists for this day

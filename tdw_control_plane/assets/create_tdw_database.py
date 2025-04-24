@@ -24,7 +24,6 @@ def create_tdw_database(context: AssetExecutionContext):
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
-            compression=True  # Disable compression to avoid clickhouse-cityhash dependency
         )
         
         # Check if database exists
