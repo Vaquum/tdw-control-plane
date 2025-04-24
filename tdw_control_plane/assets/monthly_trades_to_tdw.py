@@ -48,7 +48,7 @@ def _process_month(month_str):
     checksum_response = requests.get(checksum_url)
     checksum_response.raise_for_status()
     
-    expected_checksum = checksum_response.text.split()[-1].strip()
+    expected_checksum = checksum_response.text.split()[0].strip()
 
     response = requests.get(file_url)
     response.raise_for_status()
