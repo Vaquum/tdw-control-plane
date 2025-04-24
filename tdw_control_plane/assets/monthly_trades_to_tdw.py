@@ -158,7 +158,6 @@ def _process_month(context, month_str):
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
             compression=True,
-            connect_timeout=60,
             send_receive_timeout=300,
         )
         
@@ -199,7 +198,8 @@ def _process_month(context, month_str):
                 datetime
             ) VALUES
             ''',
-            data
+            data,
+            settings={'max_execution_time': 300}
         )
         context.log.info("Data insertion completed")
         
