@@ -1,5 +1,9 @@
 # Changelog
 
+## 15:55 on 12-08-2024
+
+- Fixed partition key unpacking in monthly_trades_to_tdw.py to correctly handle YYYY-MM-DD format
+
 ## 15:42 on 12-08-2024
 
 - Fixed monthly partition handling in monthly_trades_to_tdw.py to only process the selected partition instead of all months
