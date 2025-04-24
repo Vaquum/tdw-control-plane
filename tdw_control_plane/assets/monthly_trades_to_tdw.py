@@ -9,10 +9,10 @@ from clickhouse_driver import Client as ClickhouseClient
 from dagster import asset, MonthlyPartitionsDefinition
 from datetime import date
 
-CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '37.27.112.187')
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'clickhouse')
 CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', 9000))
 CLICKHOUSE_USER = os.environ.get('CLICKHOUSE_USER', 'default')
-CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', '')
+CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', 'password123')
 CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'tdw')
 CLICKHOUSE_TABLE = os.environ.get('CLICKHOUSE_TABLE', 'binance_trades')
 
@@ -158,7 +158,7 @@ def _process_month(context, month_str):
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
             compression=True,
-            send_receive_timeout=300,
+            send_receive_timeout=600,
         )
         
         # Check if data already exists for this month

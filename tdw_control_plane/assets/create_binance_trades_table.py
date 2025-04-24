@@ -2,10 +2,10 @@ import os
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import asset, AssetExecutionContext
 
-CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', '37.27.112.187')
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'clickhouse')
 CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', 9000))
 CLICKHOUSE_USER = os.environ.get('CLICKHOUSE_USER', 'default')
-CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', '')
+CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', 'password123')
 CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'tdw')
 
 @asset(
