@@ -1,0 +1,17 @@
+Metadata-Version: 2.4
+Name: quickstart_etl
+Version: 0.0.0
+Requires-Dist: dagster
+Requires-Dist: dagster-cloud
+Requires-Dist: boto3
+Requires-Dist: pandas
+Requires-Dist: requests
+Requires-Dist: matplotlib
+Requires-Dist: clickhouse-driver
+Requires-Dist: lz4>=4.0.0
+Requires-Dist: clickhouse-cityhash>=1.0.2
+Provides-Extra: dev
+Requires-Dist: dagster-webserver; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Dynamic: provides-extra
+Dynamic: requires-dist

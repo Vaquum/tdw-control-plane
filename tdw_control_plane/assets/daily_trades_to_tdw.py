@@ -135,16 +135,27 @@ def insert_daily_binance_trades_to_tdw(context):
     # 7. Insert data into Clickhouse
     context.log.info(f"Inserting {len(data)} rows into Clickhouse")
     
-    client = ClickhouseClient(
-        host=CLICKHOUSE_HOST,
-        port=CLICKHOUSE_PORT,
-        user=CLICKHOUSE_USER,
-        password=CLICKHOUSE_PASSWORD,
-        database=CLICKHOUSE_DATABASE
-    )
-    
-    # Start a transaction-like operation (if supported by your Clickhouse version)
     try:
+        context.log.info(f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}")
+        client = ClickhouseClient(
+            host=CLICKHOUSE_HOST,
+            port=CLICKHOUSE_PORT,
+            user=CLICKHOUSE_USER,
+            password=CLICKHOUSE_PASSWORD,
+            database=CLICKHOUSE_DATABASE,
+            compression=False  # Disable compression to avoid clickhouse-cityhash dependency
+        )
+        
+        # Check if data already exists for this day
+        result = client.execute(
+            f"""
+            SELECT count(*) 
+            FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
+            WHERE toDate(datetime) = toDate('{date_str}')
+            """
+        )
+        inserted_count = result[0][0]
+        
         # Insert data
         client.execute(
             f"""
