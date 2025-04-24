@@ -48,7 +48,7 @@ def create_binance_trades_table(context: AssetExecutionContext):
         context.log.info(f"Creating table {CLICKHOUSE_DATABASE}.binance_trades...")
         client.execute(f"""
             CREATE TABLE {CLICKHOUSE_DATABASE}.binance_trades (
-                trade_id        UInt64,
+                trade_id        UInt64  CODEC(Delta(8), ZSTD(3)),
                 price           Float64 CODEC(Delta, ZSTD(3)),
                 quantity        Float64 CODEC(ZSTD(3)),
                 quote_quantity  Float64 CODEC(ZSTD(3)),
