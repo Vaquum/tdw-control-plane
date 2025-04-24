@@ -27,7 +27,7 @@ monthly_partitions = MonthlyPartitionsDefinition(
     description='Downloads, validates, extracts, and loads Binance BTC trade data into Clickhouse'
 )
 
-def monthly_trades_to_clickhouse(context):
+def insert_monthly_binance_trades_to_tdw(context):
     # For initial database build, process all months from 2019 to present
     # Generate a list of all months to process
     month_strings = _generate_month_strings()

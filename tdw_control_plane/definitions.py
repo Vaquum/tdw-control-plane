@@ -1,41 +1,48 @@
 from dagster import Definitions, define_asset_job, schedule
 
-# Import the assets
-from .assets.daily_trades_to_clickhouse import daily_trades_to_clickhouse
-from .assets.monthly_trades_to_clickhouse import monthly_trades_to_clickhouse
+from .assets.daily_trades_to_tdw import insert_daily_binance_trades_to_tdw
+from .assets.monthly_trades_to_tdw import insert_monthly_binance_trades_to_tdw
 from .assets.create_tdw_database import create_tdw_database
 from .assets.create_binance_trades_table import create_binance_trades_table
 
-# Define the setup job for database creation
-setup_job = define_asset_job(
-    name="tdw_setup",
-    selection=["create_tdw_database", "create_binance_trades_table"]
+create_tdw_database_job = define_asset_job(
+    name="create_tdw_database",
+    selection=["create_tdw_database"]
 )
 
-# Define the daily pipeline job
-daily_pipeline_job = define_asset_job(
-    name="daily_binance_pipeline",
-    selection=["daily_trades_to_clickhouse"]
+create_binance_trades_table_job = define_asset_job(
+    name="create_binance_trades_table",
+    selection=["create_binance_trades_table"]
 )
 
-# Define the monthly pipeline job for initial data loading
-monthly_pipeline_job = define_asset_job(
-    name="monthly_binance_pipeline",
-    selection=["monthly_trades_to_clickhouse"]
+insert_monthly_binance_trades_job = define_asset_job(
+    name="insert_monthly_trades_to_tdw",
+    selection=["insert_monthly_binance_trades_to_tdw"]
 )
 
-# Schedule to run daily at 1:00 AM UTC
+insert_daily_binance_trades_job = define_asset_job(
+    name="insert_daily_trades_to_tdw",
+    selection=["insert_daily_binance_trades_to_tdw"]
+)
+
 @schedule(
-    job=daily_pipeline_job,
+    job=insert_daily_binance_trades_job,
     cron_schedule="0 1 * * *",
     execution_timezone="UTC"
 )
 def daily_pipeline_schedule():
     return {}
 
-# Create the Dagster definitions
 defs = Definitions(
-    assets=[daily_trades_to_clickhouse, monthly_trades_to_clickhouse, create_tdw_database, create_binance_trades_table],
+    assets=[create_tdw_database,
+            create_binance_trades_table,
+            insert_monthly_binance_trades_to_tdw,
+            insert_daily_binance_trades_to_tdw],
+    
     schedules=[daily_pipeline_schedule],
-    jobs=[setup_job, daily_pipeline_job, monthly_pipeline_job]
+    
+    jobs=[create_tdw_database_job,
+          create_binance_trades_table_job,
+          insert_monthly_binance_trades_job,
+          insert_daily_binance_trades_job]
 )
