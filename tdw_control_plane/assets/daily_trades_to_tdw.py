@@ -14,12 +14,12 @@ daily_partitions = DailyPartitionsDefinition(
 )
 
 # Configure Clickhouse connection
-CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "localhost")
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "37.27.112.187")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
-CLICKHOUSE_DATABASE = "trades"
-CLICKHOUSE_TABLE = "daily_updates"
+CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'tdw')
+CLICKHOUSE_TABLE = os.environ.get('CLICKHOUSE_TABLE', 'binance_trades')
 
 def compute_sha256(data):
     """Compute SHA256 checksum of data."""
@@ -38,7 +38,7 @@ def compute_sha256(data):
     group_name="binance_data",
     description="Downloads, validates, extracts, and loads Binance BTC trade data into Clickhouse"
 )
-def daily_trades_to_clickhouse(context):
+def insert_daily_binance_trades_to_tdw(context):
     """
     Complete pipeline with validation at each step.
     """
