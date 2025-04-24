@@ -131,7 +131,8 @@ def _process_month(month_str):
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
             password=CLICKHOUSE_PASSWORD,
-            database=CLICKHOUSE_DATABASE
+            database=CLICKHOUSE_DATABASE,
+            settings={'timeout': 300, 'timeout_overflow_mode': 'break'}
         )
         
         # Insert data
