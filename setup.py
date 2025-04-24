@@ -17,5 +17,5 @@ setup(
         "dev": ["dagster-webserver", "pytest"],
         "compression": ["clickhouse-cityhash>=1.0.2"]
     },
-    version="1.0.0",
+    version="1.0.1",
 )
