@@ -158,7 +158,7 @@ def _process_month(context, month_str):
             password=CLICKHOUSE_PASSWORD,
             database=CLICKHOUSE_DATABASE,
             compression=True,
-            send_receive_timeout=600,
+            send_receive_timeout=900,
         )
         
         # Check if data already exists for this month
@@ -196,10 +196,11 @@ def _process_month(context, month_str):
                 is_buyer_maker,
                 is_best_match,
                 datetime
-            ) VALUES
+            ) SETTINGS async_insert=1, wait_for_async_insert=1 
+            VALUES
             ''',
             data,
-            settings={'max_execution_time': 300}
+            settings={'max_execution_time': 900}
         )
         context.log.info("Data insertion completed")
         
