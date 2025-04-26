@@ -43,6 +43,15 @@ create_binance_trades_monthly_summary_job = define_asset_job(
     name="create_binance_trades_monthly_summary_job",
     selection=["create_binance_trades_monthly_summary"])
 
+create_binance_trades_daily_summary_job = define_asset_job(
+    name="create_binance_trades_daily_summary_job",
+    selection=["create_binance_trades_daily_summary"])
+
+create_binance_trades_hourly_summary_job = define_asset_job(
+    name="create_binance_trades_hourly_summary_job",
+    selection=["create_binance_trades_hourly_summary"])
+
+
 @schedule(
     job=insert_daily_binance_trades_job,
     cron_schedule="0 1 * * *",
@@ -56,7 +65,9 @@ defs = Definitions(
             create_binance_trades_table,
             insert_monthly_binance_trades_to_tdw,
             insert_daily_binance_trades_to_tdw,
-            create_binance_trades_monthly_summary],
+            create_binance_trades_monthly_summary,
+            create_binance_trades_daily_summary,
+            create_binance_trades_hourly_summary],
     
     schedules=[daily_pipeline_schedule],
     
@@ -64,4 +75,6 @@ defs = Definitions(
           create_binance_trades_table_job,
           insert_monthly_binance_trades_job,
           insert_daily_binance_trades_job,
-          create_binance_trades_monthly_summary_job])
+          create_binance_trades_monthly_summary_job,
+          create_binance_trades_daily_summary_job,
+          create_binance_trades_hourly_summary_job])
