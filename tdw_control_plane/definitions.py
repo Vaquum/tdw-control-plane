@@ -14,6 +14,8 @@ from .assets.monthly_trades_to_tdw import insert_monthly_binance_trades_to_tdw
 from .assets.create_tdw_database import create_tdw_database
 from .assets.create_binance_trades_table import create_binance_trades_table
 from .assets.create_binance_trades_monthly_summary import create_binance_trades_monthly_summary
+from .assets.create_binance_trades_daily_summary import create_binance_trades_daily_summary
+from .assets.create_binance_trades_hourly_summary import create_binance_trades_hourly_summary
 
 # Database Maintenance Jobs
 
