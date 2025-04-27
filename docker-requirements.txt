@@ -1,0 +1,14 @@
+dagster[redis,postgres]
+dagit
+clickhouse-driver
+jupyterlab
+lz4
+clickhouse-cityhash
+polars
+pyarrow 
+numpy
+altair
+pandas
+matplotlib
+seaborn
+scikit-learn
