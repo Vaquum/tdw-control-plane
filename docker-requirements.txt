@@ -6,3 +6,9 @@ lz4
 clickhouse-cityhash
 polars
 pyarrow 
+numpy
+altair
+pandas
+matplotlib
+seaborn
+scikit-learn
