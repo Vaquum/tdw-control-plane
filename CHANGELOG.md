@@ -25,3 +25,7 @@
 
 - Fixed Clickhouse compression dependency by moving `clickhouse-cityhash` from optional extras to required dependencies
 - Bumped version from 1.0.1 to 1.0.2 
+
+## 16:19 on 18-09-2024
+
+- Improved Dockerfile by moving package requirements to docker-requirements.txt file 
