@@ -91,13 +91,14 @@ services:
     network_mode: "host"
     ports:
       - "9999:8888"
-    working_dir: /opt/app/notebooks
+    working_dir: /opt/notebooks
     environment:
       - PYTHONPATH=/opt/app
     volumes:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
-      - /home/mikko/work-in-progress/vaquum_tools/:/vaquum_tools
+      - /data/notebooks:/opt/notebooks
+    #1 - /home/mikko/work-in-progress/vaquum_tools/:/vaquum_tools
     depends_on:
       clickhouse:
         condition: service_healthy
