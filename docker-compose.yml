@@ -1,9 +1,4 @@
 services:
-  app:
-    build:
-      context: .
-      args:
-        - GITHUB_TOKEN=${GITHUB_TOKEN}
   clickhouse:
     image: clickhouse/clickhouse-server:latest
     ports:
