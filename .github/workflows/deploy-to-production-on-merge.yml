@@ -1,4 +1,4 @@
-name: Deploy to Production on Merge
+name: Deploy to Production
 
 on:
   pull_request:
@@ -9,15 +9,19 @@ on:
 
 jobs:
   deploy:
-    if: ${{ github.event.pull_request.merged }}
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     
     steps:
-      - name: Deploy to production server
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: 37.27.112.167
-          username: root
-          key: ${{ secrets.TDW_PRIVATE_KEY }}
-          script: '@deploy'
-          debug: true
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.TDW_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          eval $(ssh-agent -s)
+          ssh-add ~/.ssh/deploy_key
+          # Disable host key checking for this workflow
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+      
+      - name: Deploy using SSH
+        run: ssh root@37.27.112.167 'pwd'
