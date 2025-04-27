@@ -1,0 +1,22 @@
+name: Deploy to Production
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+
+jobs:
+  deploy:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Deploy to production server
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: 37.27.112.167
+          username: root
+          password: ${{ secrets.TDW_SERVER_PASSWORD }}
+          script: '@deploy' 
