@@ -25,9 +25,10 @@ services:
     environment:
       - MB_DB_TYPE=h2
       - MB_PLUGINS_DIR=/plugins
+      - MB_DB_FILE=/data/metabase.db
       - MB_ENABLE_EMBEDDING=true
     volumes:
-      - metabase-data:/metabase-data
+      - metabase-data:/data
       - ./plugins:/plugins
     depends_on:
       clickhouse:
