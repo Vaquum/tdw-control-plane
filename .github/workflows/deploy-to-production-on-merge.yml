@@ -20,3 +20,4 @@ jobs:
           username: root
           key: ${{ secrets.TDW_PRIVATE_KEY }}
           script: '@deploy'
+          debug: true
