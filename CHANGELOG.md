@@ -3,3 +3,6 @@
 
 ## 16:10 on 22-07-2024
 - Added new binance_trades_day_of_month_summary asset to create a table aggregating trade statistics by day of month 
+
+## 16:25 on 22-07-2024
+- Added new binance_trades_week_of_year_summary asset to create a table aggregating trade statistics by week of year 
