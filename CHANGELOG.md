@@ -9,3 +9,6 @@
 
 ## 16:40 on 22-07-2024
 - Added new binance_trades_month_of_year_summary asset to create a table aggregating trade statistics by month of year
+
+## 16:55 on 22-07-2024
+- Updated definitions.py to register all new summary assets and create their respective jobs
