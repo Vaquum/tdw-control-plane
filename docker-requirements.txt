@@ -13,4 +13,7 @@ matplotlib
 seaborn
 scikit-learn
 numba
-
+sqlite3
+h5py
+tslearn
+plotly
