@@ -36,19 +36,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  grafana:
-    image: grafana/grafana:latest
-    ports:
-      - "3001:3000"
-    volumes:
-      - grafana-data:/var/lib/grafana
-    environment:
-      - GF_INSTALL_PLUGINS=vertamedia-clickhouse-datasource
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    restart: unless-stopped
-
   tabix:
     image: spoonest/clickhouse-tabix-web-client:latest
     ports:
