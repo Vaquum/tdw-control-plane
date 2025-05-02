@@ -32,7 +32,7 @@ RUN --mount=type=ssh,id=trades-warehouse \
 # Try with StrictHostKeyChecking=no option explicitly
 RUN --mount=type=ssh,id=trades-warehouse \
     GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -v" \
-    pip install git+ssh://git@github.com/vaquum/vaquum-tools.git
+    pip install git+ssh://git@github.com/vaquum/vaquum-tools.git \
     pip install git+ssh://git@github.com/vaquum/loop.git
 
 ENV DAGSTER_HOME=/opt/trades-warehouse
