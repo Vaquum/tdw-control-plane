@@ -30,6 +30,7 @@ services:
     volumes:
       - metabase-data:/data
       - ./plugins:/plugins
+      - /data/experiments:/experiments
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -99,7 +100,7 @@ services:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
       - /data/notebooks:/opt/notebooks
-    #1 - /home/mikko/work-in-progress/vaquum_tools/:/vaquum_tools
+      - /data/experiments:/opt/experiments
     depends_on:
       clickhouse:
         condition: service_healthy
