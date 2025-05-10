@@ -16,3 +16,4 @@ numba
 h5py
 tslearn
 plotly
+lightgbm
