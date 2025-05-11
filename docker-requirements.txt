@@ -18,3 +18,4 @@ tslearn
 plotly
 lightgbm
 clickhouse_connect
+git+https://github.com/vaquum/binancial
