@@ -263,27 +263,3 @@ def _process_month(context, month_str):
                 pass
         # Clear large variables to help garbage collection
         data = None
-
-def _generate_month_strings(start_year=2019, start_month=1):
-    
-    today = date.today()
-    y, m = today.year, today.month - 1
-    if m == 0: 
-        y, m = y - 1, 12
-    start_idx = start_year * 12 + start_month - 1
-    end_idx = y * 12 + m - 1
-    return [
-        f'BTCUSDT-aggTrades-{idx//12:04d}-{idx%12+1:02d}.zip'
-        for idx in range(start_idx, end_idx + 1)
-    ]
-
-def _compute_sha256(data):
-    
-    if isinstance(data, bytes):
-        return hashlib.sha256(data).hexdigest()
-    else:
-        sha256_hash = hashlib.sha256()
-        for byte_block in iter(lambda: data.read(4096), b""):
-            sha256_hash.update(byte_block)
-        data.seek(0)
-        return sha256_hash.hexdigest()
