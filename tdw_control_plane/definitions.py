@@ -1,7 +1,7 @@
 # How to add a new asset?
 
 # 1. Add the asset to the assets folder
-# 2. Add the asset to the imports bel
+# 2. Add the asset to the imports below
 # 3. Create a new job for the asset
 # 4. Add the job to the assets list
 # 5. Add the job to the jobs list
@@ -20,6 +20,8 @@ from .assets.create_binance_trades_hour_of_day_summary import create_binance_tra
 from .assets.create_binance_trades_day_of_month_summary import create_binance_trades_day_of_month_summary
 from .assets.create_binance_trades_week_of_year_summary import create_binance_trades_week_of_year_summary
 from .assets.create_binance_trades_month_of_year_summary import create_binance_trades_month_of_year_summary
+from .assets.create_binance_agg_trades_table import create_binance_agg_trades_table
+from .assets.monthly_agg_trades_to_tdw import insert_monthly_binance_agg_trades_to_tdw
 
 # Database Maintenance Jobs
 
@@ -31,6 +33,10 @@ create_binance_trades_table_job = define_asset_job(
     name="create_binance_trades_table_job",
     selection=["create_binance_trades_table"])
 
+create_binance_agg_trades_table_job = define_asset_job(
+    name="create_binance_agg_trades_table_job",
+    selection=["create_binance_agg_trades_table"])
+
 # Data Insertion Jobs
 
 insert_monthly_binance_trades_job = define_asset_job(
@@ -40,6 +46,10 @@ insert_monthly_binance_trades_job = define_asset_job(
 insert_daily_binance_trades_job = define_asset_job(
     name="insert_daily_trades_to_tdw_job",
     selection=["insert_daily_binance_trades_to_tdw"])
+
+insert_monthly_binance_agg_trades_job = define_asset_job(
+    name="insert_monthly_agg_trades_to_tdw_job",
+    selection=["insert_monthly_binance_agg_trades_to_tdw"])
 
 # summary Table Creation Jobs
 
@@ -91,7 +101,9 @@ defs = Definitions(
             create_binance_trades_hour_of_day_summary,
             create_binance_trades_day_of_month_summary,
             create_binance_trades_week_of_year_summary,
-            create_binance_trades_month_of_year_summary],
+            create_binance_trades_month_of_year_summary,
+            create_binance_agg_trades_table,
+            insert_monthly_binance_agg_trades_to_tdw],
     
     schedules=[daily_pipeline_schedule],
     
@@ -105,4 +117,6 @@ defs = Definitions(
           create_binance_trades_hour_of_day_summary_job,
           create_binance_trades_day_of_month_summary_job,
           create_binance_trades_week_of_year_summary_job,
-          create_binance_trades_month_of_year_summary_job])
+          create_binance_trades_month_of_year_summary_job,
+          create_binance_agg_trades_table_job,
+          insert_monthly_binance_agg_trades_job])
