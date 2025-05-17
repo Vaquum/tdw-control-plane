@@ -22,6 +22,8 @@ from .assets.create_binance_trades_week_of_year_summary import create_binance_tr
 from .assets.create_binance_trades_month_of_year_summary import create_binance_trades_month_of_year_summary
 from .assets.create_binance_agg_trades_table import create_binance_agg_trades_table
 from .assets.monthly_agg_trades_to_tdw import insert_monthly_binance_agg_trades_to_tdw
+from .assets.create_binance_futures_trades_table import create_binance_futures_trades_table
+from .assets.monthly_futures_trades_to_tdw import insert_monthly_binance_futures_trades_to_tdw
 
 # Database Maintenance Jobs
 
@@ -37,6 +39,10 @@ create_binance_agg_trades_table_job = define_asset_job(
     name="create_binance_agg_trades_table_job",
     selection=["create_binance_agg_trades_table"])
 
+create_binance_futures_trades_table_job = define_asset_job(
+    name="create_binance_futures_trades_table_job",
+    selection=["create_binance_futures_trades_table"])
+
 # Data Insertion Jobs
 
 insert_monthly_binance_trades_job = define_asset_job(
@@ -50,6 +56,10 @@ insert_daily_binance_trades_job = define_asset_job(
 insert_monthly_binance_agg_trades_job = define_asset_job(
     name="insert_monthly_agg_trades_to_tdw_job",
     selection=["insert_monthly_binance_agg_trades_to_tdw"])
+
+insert_monthly_binance_futures_trades_job = define_asset_job(
+    name="insert_monthly_futures_trades_to_tdw_job",
+    selection=["insert_monthly_binance_futures_trades_to_tdw"])
 
 # summary Table Creation Jobs
 
@@ -103,7 +113,9 @@ defs = Definitions(
             create_binance_trades_week_of_year_summary,
             create_binance_trades_month_of_year_summary,
             create_binance_agg_trades_table,
-            insert_monthly_binance_agg_trades_to_tdw],
+            insert_monthly_binance_agg_trades_to_tdw,
+            create_binance_futures_trades_table,
+            insert_monthly_binance_futures_trades_to_tdw],
     
     schedules=[daily_pipeline_schedule],
     
@@ -119,4 +131,6 @@ defs = Definitions(
           create_binance_trades_week_of_year_summary_job,
           create_binance_trades_month_of_year_summary_job,
           create_binance_agg_trades_table_job,
-          insert_monthly_binance_agg_trades_job])
+          insert_monthly_binance_agg_trades_job,
+          create_binance_futures_trades_table_job,
+          insert_monthly_binance_futures_trades_job])

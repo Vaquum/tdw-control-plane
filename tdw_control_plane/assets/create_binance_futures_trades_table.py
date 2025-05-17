@@ -1,0 +1,91 @@
+import os
+from clickhouse_driver import Client as ClickhouseClient
+from dagster import asset, AssetExecutionContext
+
+CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'clickhouse')
+CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', 9000))
+CLICKHOUSE_USER = os.environ.get('CLICKHOUSE_USER', 'default')
+CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', 'password123')
+CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'tdw')
+
+@asset(
+    group_name='tdw_setup',
+    description='Creates the binance_futures_trades table with optimal settings for high-volume trade data'
+)
+def create_binance_futures_trades_table(context: AssetExecutionContext):
+    """
+    Creates a highly optimized ClickHouse table for Binance futures trades data.
+    """
+    client = None
+    try:
+        # Connect to ClickHouse
+        client = ClickhouseClient(
+            host=CLICKHOUSE_HOST,
+            port=CLICKHOUSE_PORT,
+            user=CLICKHOUSE_USER,
+            password=CLICKHOUSE_PASSWORD,
+            database=CLICKHOUSE_DATABASE
+        )
+        
+        # Check if the database exists
+        db_exists = client.execute(f"SELECT count() FROM system.databases WHERE name = '{CLICKHOUSE_DATABASE}'")
+        if not db_exists[0][0]:
+            context.log.error(f"Database {CLICKHOUSE_DATABASE} does not exist. Please create it first.")
+            return {"status": "error", "message": f"Database {CLICKHOUSE_DATABASE} does not exist"}
+        
+        # Check if the table already exists
+        table_exists = client.execute(f"SELECT count() FROM system.tables WHERE database = '{CLICKHOUSE_DATABASE}' AND name = 'binance_futures_trades'")
+        was_dropped = False
+        
+        # If the table exists, drop it
+        if table_exists[0][0]:
+            context.log.info(f"Table {CLICKHOUSE_DATABASE}.binance_futures_trades already exists. Dropping it...")
+            client.execute(f"DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE}.binance_futures_trades")
+            context.log.info(f"Table {CLICKHOUSE_DATABASE}.binance_futures_trades has been dropped.")
+            was_dropped = True
+        
+        # Create the binance_trades table
+        context.log.info(f"Creating table {CLICKHOUSE_DATABASE}.binance_futures_trades...")
+        client.execute(f"""
+            CREATE TABLE {CLICKHOUSE_DATABASE}.binance_futures_trades (
+                id              UInt64  CODEC(Delta(8), ZSTD(3)) as futures_trade_id,
+                price           Float64 CODEC(Delta, ZSTD(3)),
+                qty             Float64 CODEC(ZSTD(3)) as quantity,
+                quote_qty       Float64 CODEC(ZSTD(3)) as quote_quantity,
+                time            UInt64  CODEC(Delta, ZSTD(3)) as timestamp,
+                is_buyer_maker  UInt8   CODEC(ZSTD(1)),
+                datetime        DateTime CODEC(Delta, ZSTD(3))
+            )
+            ENGINE = MergeTree()
+            PARTITION BY toYYYYMM(datetime)
+            ORDER BY (toStartOfDay(datetime), futures_trade_id)
+            SAMPLE BY futures_trade_id
+            SETTINGS 
+                index_granularity = 8192,
+                enable_mixed_granularity_parts = 1,
+                min_rows_for_wide_part = 1000000,
+                min_bytes_for_wide_part = 10000000,
+                min_rows_for_compact_part = 10000,
+                write_final_mark = 0,
+                optimize_on_insert = 1,
+                max_partitions_per_insert_block = 1000
+        """)
+        context.log.info(f"Table {CLICKHOUSE_DATABASE}.binance_futures_trades has been created successfully.")
+        
+        return {
+            "status": "success",
+            "table": f"{CLICKHOUSE_DATABASE}.binance_futures_trades",
+            "action": "recreated" if was_dropped else "created"
+        }
+        
+    except Exception as e:
+        context.log.error(f"Error creating binance_futures_trades table: {str(e)}")
+        return {"status": "error", "message": str(e)}
+        
+    finally:
+        # Ensure client is disconnected
+        if client:
+            try:
+                client.disconnect()
+            except Exception as e:
+                context.log.warning(f"Error disconnecting from ClickHouse: {str(e)}") 
