@@ -48,13 +48,13 @@ def create_binance_futures_trades_table(context: AssetExecutionContext):
         context.log.info(f"Creating table {CLICKHOUSE_DATABASE}.binance_futures_trades...")
         client.execute(f"""
             CREATE TABLE {CLICKHOUSE_DATABASE}.binance_futures_trades (
-                id              UInt64  CODEC(Delta(8), ZSTD(3)) as futures_trade_id,
-                price           Float64 CODEC(Delta, ZSTD(3)),
-                qty             Float64 CODEC(ZSTD(3)) as quantity,
-                quote_qty       Float64 CODEC(ZSTD(3)) as quote_quantity,
-                time            UInt64  CODEC(Delta, ZSTD(3)) as timestamp,
-                is_buyer_maker  UInt8   CODEC(ZSTD(1)),
-                datetime        DateTime CODEC(Delta, ZSTD(3))
+                futures_trade_id    UInt64  CODEC(Delta(8), ZSTD(3)),
+                price               Float64 CODEC(Delta, ZSTD(3)),
+                quantity            Float64 CODEC(ZSTD(3)),
+                quote_quantity      Float64 CODEC(ZSTD(3)),
+                timestamp           UInt64  CODEC(Delta, ZSTD(3)),
+                is_buyer_maker      UInt8   CODEC(ZSTD(1)),
+                datetime            DateTime CODEC(Delta, ZSTD(3))
             )
             ENGINE = MergeTree()
             PARTITION BY toYYYYMM(datetime)
