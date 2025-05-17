@@ -45,7 +45,7 @@ def insert_monthly_binance_agg_trades_to_tdw(context):
     return result
 
 def _process_month(context, month_str):
-    base_url = 'https://data.binance.vision/?prefix=data/spot/monthly/aggTrades/BTCUSDT/'
+    base_url = 'https://data.binance.vision/data/spot/monthly/aggTrades/BTCUSDT/'
     file_url = base_url + month_str
     checksum_url = file_url + '.CHECKSUM'
     
