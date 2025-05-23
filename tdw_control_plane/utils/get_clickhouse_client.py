@@ -1,0 +1,18 @@
+import os
+from clickhouse_connect import get_client
+
+def get_clickhouse_client():
+
+    '''Returns a ClickHouse client.'''
+
+    CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'localhost')
+    CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', 8123))
+    CLICKHOUSE_USER = os.environ.get('CLICKHOUSE_USER', 'default')
+    CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', 'password123')
+    
+    client = get_client(host=CLICKHOUSE_HOST,
+                        port=CLICKHOUSE_PORT,
+                        username=CLICKHOUSE_USER,
+                        password=CLICKHOUSE_PASSWORD)
+
+    return client
