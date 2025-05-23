@@ -16,4 +16,4 @@ def create_database(context):
         context.log.info(f"Created database {CLICKHOUSE_DATABASE}.")
 
     else:
-        context.log.info(f"Database {CLICKHOUSE_DATABASE} already exist, did nothing.")
+        context.log.info(f"Database {CLICKHOUSE_DATABASE} already exists, did nothing.")
