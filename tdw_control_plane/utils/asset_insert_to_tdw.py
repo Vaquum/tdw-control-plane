@@ -39,10 +39,10 @@ def asset_insert_to_tdw(data,
     
     context.log.info(f"Data start date: {month_start}")
     
-    check_result = client.query(f'''SELECT count(*)
+    check_result = client.query(f"""SELECT count(*)
                                 FROM {clickhouse_database}.{clickhouse_table}
                                 WHERE datetime >= toDate('{month_start}')
-                                AND datetime < addMonths(toDate('{month_start}'), 1)''')
+                                AND datetime < addMonths(toDate('{month_start}'), 1)""")
     
     existing_count = check_result.result_set[0][0]
     
@@ -56,7 +56,10 @@ def asset_insert_to_tdw(data,
     
     client.insert_arrow(f"{clickhouse_database}.{clickhouse_table}", arrow_table)
     
-    inserted_count = client.query(f"select count(*) from {clickhouse_database}.{clickhouse_table}")
+    inserted_count = client.query(f"""SELECT count(*)
+                                      FROM {clickhouse_database}.{clickhouse_table}
+                                      WHERE datetime >= toDate('{month_start}')
+                                      AND datetime < addMonths(toDate('{month_start}'), 1)""")
     inserted_count = inserted_count.result_set[0][0]
     context.log.info(f"Inserted {inserted_count} rows.")
     
