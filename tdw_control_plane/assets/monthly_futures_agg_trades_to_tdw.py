@@ -87,6 +87,6 @@ def insert_monthly_binance_futures_agg_trades_to_tdw(context):
     data.columns = DATA_COLS
     context.log.info(f"Completed reading {BASE_URL} into a DataFrame.")
 
-    asset_insert_to_tdw(data, context, file_url)
+    asset_insert_to_tdw(data, client, context, file_url, CLICKHOUSE_DATABASE, CLICKHOUSE_TABLE)
 
 ## ASSETS END ##
