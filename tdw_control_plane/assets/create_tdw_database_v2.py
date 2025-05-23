@@ -1,10 +1,10 @@
-from .utils.clickhouse_client import get_clickhouse_client
+from .utils.get_clickhouse_client import get_clickhouse_client
 from dagster import asset
 
 CLICKHOUSE_DATABASE = 'tdw'
 client = get_clickhouse_client()
 
-@asset(group_name=f'create_db_{CLICKHOUSE_DATABASE}',
+@asset(group_name=f'create_db',
        description=f'Creates the database {CLICKHOUSE_DATABASE}')
 
 def create_database(context):

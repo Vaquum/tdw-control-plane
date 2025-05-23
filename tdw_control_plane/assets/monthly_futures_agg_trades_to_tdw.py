@@ -27,9 +27,6 @@ ID_COL = f"{CLICKHOUSE_TABLE.replace('binance_', '')}_id"
 # Set the starting month
 MONTHLY_PARTITIONS = MonthlyPartitionsDefinition(start_date='2020-01-01')
 
-# Set the table to be used
-CLICKHOUSE_TABLE = os.environ.get('CLICKHOUSE_TABLE', 'binance_futures_agg_trades')
-
 # Set the base url for the files to download
 BASE_URL = 'https://data.binance.vision/data/futures/um/monthly/aggTrades/BTCUSDT/'
 
@@ -70,7 +67,7 @@ def create_binance_futures_agg_trades_table(context: AssetExecutionContext):
 
 
 @asset(partitions_def=MONTHLY_PARTITIONS,
-       group_name=f'{CLICKHOUSE_DATABASE}_{CLICKHOUSE_TABLE}',
+       group_name=f'insert_monthly_data',
        description=f'Inserts monthly data into {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}.')
 
 def insert_monthly_binance_futures_agg_trades_to_tdw(context):
