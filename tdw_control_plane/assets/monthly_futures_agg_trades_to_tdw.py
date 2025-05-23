@@ -13,6 +13,7 @@ from tdw_control_plane.utils.asset_insert_to_tdw import asset_insert_to_tdw
 # 2) Update the function names to end with {CLICKHOUSE_TABLE}
 # 3) Update the `client.command` in `create_{CLICKHOUSE_TABLE}`
 # 4) Update `file_url` initialization in `insert_monthly_{CLICKHOUSE_TABLE}`
+# 5) Update the function names
 
 ## CONFIG STARTS ##
 
