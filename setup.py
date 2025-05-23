@@ -17,5 +17,5 @@ setup(
     extras_require={
         "dev": ["dagster-webserver", "pytest"],
     },
-    version="1.0.9",
+    version="1.0.10",
 )
