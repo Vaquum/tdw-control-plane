@@ -5,7 +5,7 @@ def get_clickhouse_client():
 
     '''Returns a ClickHouse client.'''
 
-    CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'localhost')
+    CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'clickhouse')
     CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', 8123))
     CLICKHOUSE_USER = os.environ.get('CLICKHOUSE_USER', 'default')
     CLICKHOUSE_PASSWORD = os.environ.get('CLICKHOUSE_PASSWORD', 'password123')
