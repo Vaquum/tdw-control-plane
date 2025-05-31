@@ -20,3 +20,5 @@ lightgbm
 clickhouse_connect
 git+https://github.com/vaquum/binancial
 jupyter-resource-usage<1.0.0
+polars_ta
+optuna
