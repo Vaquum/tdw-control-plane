@@ -91,9 +91,7 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-    command: >
-      bash -lc "jupyter lab --ip=0.0.0.0 --no-browser --allow-root \
-      --NotebookApp.token='1342084237095993446/1342084357812260895' --NotebookApp.password=''"
+    command: /opt/setup-jupyter.sh
     restart: unless-stopped
 
 volumes:

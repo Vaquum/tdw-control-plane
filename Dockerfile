@@ -34,3 +34,6 @@ RUN --mount=type=ssh,id=trades-warehouse \
 ENV DAGSTER_HOME=/opt/trades-warehouse
 WORKDIR /opt/trades-warehouse
 COPY . /opt/trades-warehouse
+
+COPY setup-jupyter.sh /opt/setup-jupyter.sh
+RUN chmod +x /opt/setup-jupyter.sh
