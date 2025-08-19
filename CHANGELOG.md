@@ -12,3 +12,6 @@
 
 ## 16:55 on 22-07-2024
 - Updated definitions.py to register all new summary assets and create their respective jobs
+
+## 12:22 on 19-08-2025
+- Added Keyboard Shortcuts for JupyterLab to `run-all-cells` and `restart-kernal-and-run-all-cells`
