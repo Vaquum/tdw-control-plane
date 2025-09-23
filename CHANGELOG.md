@@ -12,3 +12,6 @@
 
 ## 16:55 on 22-07-2024
 - Updated definitions.py to register all new summary assets and create their respective jobs
+
+## 12:40 on 23-08-2025
+- Migrated from `vaquum_tools` to `loop`
