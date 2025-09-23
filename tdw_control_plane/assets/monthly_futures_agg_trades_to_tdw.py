@@ -1,7 +1,6 @@
 import os
 
-from vaquum_tools.binance_file_to_polars import get_binance_file_to_polars
-from vaquum_tools.utils import check_if_has_header
+from loop.utils import check_if_has_header, binance_file_to_polars
 
 from dagster import asset, AssetExecutionContext, MonthlyPartitionsDefinition
 from tdw_control_plane.utils.get_clickhouse_client import get_clickhouse_client
@@ -83,7 +82,7 @@ def insert_monthly_binance_futures_agg_trades_to_tdw(context):
 
     full_url = BASE_URL + file_url
     
-    data = get_binance_file_to_polars(full_url, has_header=check_if_has_header(full_url))
+    data = binance_file_to_polars(full_url, has_header=check_if_has_header(full_url))
     data.columns = DATA_COLS
     context.log.info(f"Completed reading {BASE_URL} into a DataFrame.")
 
