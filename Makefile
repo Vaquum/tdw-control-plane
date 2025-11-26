@@ -4,7 +4,7 @@
 SHELL := /bin/bash
 
 # Phony targets don't represent files
-.PHONY: all up down build clean setup
+.PHONY: all up down build clean setup certs
 
 all: up
 
@@ -19,22 +19,33 @@ all: up
 		echo ".env file created successfully."; \
 	fi
 
-# Run this once to add the .env file to .gitignore
+# Generates self-signed SSL certificates for local development if they don't exist.
+certs:
+	@mkdir -p certs
+	@if [ ! -f certs/nginx-selfsigned.crt ]; then \
+		echo "Generating self-signed SSL certificates for local development..."; \
+		openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+			-keyout certs/nginx-selfsigned.key \
+			-out certs/nginx-selfsigned.crt \
+			-subj "/C=US/ST=State/L=City/O=Organization/CN=localhost"; \
+		echo "Certificates generated in certs/"; \
+	fi
+
+# Run this once to add the .env and certs to .gitignore (idempotent check)
 setup:
-	@echo "" >> .gitignore
-	@echo "# Secrets file" >> .gitignore
-	@echo ".env" >> .gitignore
-	@echo "Added .env to .gitignore to prevent committing secrets."
+	@grep -qF ".env" .gitignore || echo ".env" >> .gitignore
+	@grep -qF "certs/" .gitignore || echo "certs/" >> .gitignore
+	@echo "Ensure .env and certs/ are ignored by git."
 
 # Build the docker images.
-# Depends on .env to ensure environment variables are available for build-time arguments if needed.
-build: .env
+# Depends on .env and certs to ensure secrets and SSL are available.
+build: .env certs
 	@echo "Building Docker images..."
 	docker-compose build
 
 # Start the services in detached mode.
-# Depends on .env to ensure passwords are set for the services at runtime.
-up: .env
+# Depends on .env and certs.
+up: .env certs
 	@echo "Starting Docker services in detached mode..."
 	docker-compose up -d
 
