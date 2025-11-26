@@ -22,3 +22,6 @@ pytest.ini
 
 storage
 logs
+
+# Secrets file
+.env
