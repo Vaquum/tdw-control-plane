@@ -27,9 +27,9 @@ RUN --mount=type=ssh,id=trades-warehouse \
     ssh-add -l 2>&1 || echo "Exit code: $?" && \
     echo "========= END DEBUG ========="
 
-#RUN --mount=type=ssh,id=trades-warehouse \
-#    GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -v" \
-#    pip install --no-cache-dir --upgrade git+ssh://git@github.com/vaquum/Loop.git
+RUN --mount=type=ssh,id=trades-warehouse \
+    GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=no -v" \
+    pip install --no-cache-dir --upgrade git+ssh://git@github.com/vaquum/Loop.git
 
 ENV DAGSTER_HOME=/opt/trades-warehouse
 WORKDIR /opt/trades-warehouse
