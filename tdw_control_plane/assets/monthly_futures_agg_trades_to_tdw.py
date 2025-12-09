@@ -1,6 +1,9 @@
 import os
+import polars as pl
+import random
 
-from loop.utils import check_if_has_header, binance_file_to_polars
+from loop.utils.check_if_has_header import check_if_has_header
+from loop.utils.binance_file_to_polars import binance_file_to_polars
 
 from dagster import asset, AssetExecutionContext, MonthlyPartitionsDefinition
 from tdw_control_plane.utils.get_clickhouse_client import get_clickhouse_client
@@ -80,7 +83,29 @@ def insert_monthly_binance_futures_agg_trades_to_tdw(context):
 
     full_url = BASE_URL + file_url
     
-    data = binance_file_to_polars(full_url, has_header=check_if_has_header(full_url))
+    if os.environ.get('DAGSTER_ENVIRONMENT') == 'local':
+        context.log.info("Running in LOCAL mode. Generating dummy data to prevent OOM.")
+        
+        # Calculate start timestamp for the current partition (year-month)
+        import datetime
+        # Create a date object for the 1st of the partition month
+        partition_date = datetime.datetime(int(year), int(month), 1)
+        # Convert to milliseconds timestamp
+        start_ts = int(partition_date.timestamp() * 1000)
+        
+        # Generate 100 rows of dummy data
+        data = pl.DataFrame({
+            DATA_COLS[0]: range(1, 101),                  # ID
+            DATA_COLS[1]: [random.uniform(40000, 60000) for _ in range(100)], # price
+            DATA_COLS[2]: [random.uniform(0.001, 2.0) for _ in range(100)],   # quantity
+            DATA_COLS[3]: range(1000, 1100),              # first_trade_id
+            DATA_COLS[4]: range(1000, 1100),              # last_trade_id
+            DATA_COLS[5]: range(start_ts, start_ts + 100), # timestamp (aligned with partition)
+            DATA_COLS[6]: [random.choice([True, False]) for _ in range(100)]  # is_buyer_maker
+        })
+    else:
+        data = binance_file_to_polars(full_url, has_header=check_if_has_header(full_url))
+    
     data.columns = DATA_COLS
     context.log.info(f"Completed reading {BASE_URL} into a DataFrame.")
 
