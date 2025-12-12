@@ -12,6 +12,6 @@ def get_clickhouse_client():
     client = get_client(host=CLICKHOUSE_HOST,
                         port=CLICKHOUSE_PORT,
                         username=CLICKHOUSE_USER,
-                        password=os.getenv('CLICKHOUSE_PASSWORD'))
+                        password=os.environ.get('CLICKHOUSE_PASSWORD'))
 
     return client
