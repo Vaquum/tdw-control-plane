@@ -22,7 +22,7 @@
 
 - Migrated from `vaquum_tools` to `loop`
 
-## 11:29 on 12-12-2025
+## v1.0.12 on 12th of December 2025
 
 - Enhanced security: Implemented unique passwords for each service and improved ClickHouse password handling.
 - Infrastructure: Enabled HTTPS for all services.
