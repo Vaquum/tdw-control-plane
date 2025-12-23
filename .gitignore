@@ -22,17 +22,3 @@ pytest.ini
 
 storage
 logs
-
-# Secrets and Local Data
-.env
-data/
-.venv/
-.nux/
-.telemetry/
-.gemini-clipboard/
-llm_prompt_for_loop_repo.txt
-loop
-
-plugins/
-storage/
-logs/
