@@ -1,12 +1,15 @@
 services:
   clickhouse:
     image: clickhouse/clickhouse-server:latest
+    ports:
+      - "8123:8123"
+      - "9000:9000"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
       - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/clickhouse-config.xml
     environment:
       - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_PASSWORD=password123
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
       interval: 5s
@@ -17,13 +20,13 @@ services:
 
   metabase:
     image: metabase/metabase-enterprise:latest
+    ports:
+      - "3000:3000"
     environment:
       - MB_DB_TYPE=h2
       - MB_PLUGINS_DIR=/plugins
       - MB_DB_FILE=/data/metabase.db
       - MB_ENABLE_EMBEDDING=true
-      - MB_ADMIN_EMAIL=admin@example.com
-      - MB_ADMIN_PASSWORD=${METABASE_ADMIN_PASSWORD}
     volumes:
       - metabase-data:/data
       - ./plugins:/plugins
@@ -35,17 +38,20 @@ services:
 
   tabix:
     image: spoonest/clickhouse-tabix-web-client:latest
+    ports:
+      - "8080:80"
     restart: unless-stopped
 
   dagit:
     build: .
     image: trades-warehouse-dagster:latest
+    ports:
+      - "4000:3000"
     environment:
-      - DAGSTER_HOME=/opt/trades-warehouse
-      - PYTHONPATH=/opt/trades-warehouse
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - DAGSTER_HOME=/opt/app
+      - PYTHONPATH=/opt/app
     volumes:
-      - .:/opt/trades-warehouse
+      - .:/opt/app
       - dagster-instance:/opt/dagster-instance
     depends_on:
       clickhouse:
@@ -57,11 +63,10 @@ services:
     build: .
     image: trades-warehouse-dagster:latest
     environment:
-      - DAGSTER_HOME=/opt/trades-warehouse
-      - PYTHONPATH=/opt/trades-warehouse
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - DAGSTER_HOME=/opt/app
+      - PYTHONPATH=/opt/app
     volumes:
-      - .:/opt/trades-warehouse
+      - .:/opt/app
       - dagster-instance:/opt/dagster-instance
     depends_on:
       clickhouse:
@@ -72,13 +77,14 @@ services:
   jupyter:
     build: .
     image: trades-warehouse-dagster:latest
+    network_mode: "host"
+    ports:
+      - "9999:8888"
     working_dir: /opt/notebooks
     environment:
-      - PYTHONPATH=/opt/trades-warehouse
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
+      - PYTHONPATH=/opt/app
     volumes:
-      - .:/opt/trades-warehouse
+      - .:/opt/app
       - dagster-instance:/opt/dagster-instance
       - /data/notebooks:/opt/notebooks
       - /data/experiments:/opt/experiments
@@ -87,34 +93,8 @@ services:
         condition: service_healthy
     command: >
       bash -lc "jupyter lab --ip=0.0.0.0 --no-browser --allow-root \
-      --IdentityProvider.token='${JUPYTER_TOKEN}' \
-      --ServerApp.allow_origin='*'"
+      --NotebookApp.token='1342084237095993446/1342084357812260895' --NotebookApp.password=''"
     restart: unless-stopped
-
-  nginx:
-    image: nginx:latest
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
-    depends_on:
-      - clickhouse
-      - metabase
-      - tabix
-      - dagit
-      - jupyter
-    command: '/bin/sh -c ''while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'''
-    restart: unless-stopped
-
-  certbot:
-    image: certbot/certbot
-    volumes:
-      - ./data/certbot/conf:/etc/letsencrypt
-      - ./data/certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done; '"
 
 volumes:
   clickhouse-data:
