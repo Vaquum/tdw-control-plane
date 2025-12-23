@@ -38,16 +38,23 @@ setup:
 	@echo "Ensure .env and certs/ are ignored by git."
 
 # Build the docker images.
-# Depends on .env and certs to ensure secrets and SSL are available.
-build: .env certs
+# Depends on .env to ensure secrets are available.
+build: .env
 	@echo "Building Docker images..."
 	docker-compose build
 
 # Start the services in detached mode.
-# Depends on .env and certs.
-up: .env certs
+# Depends on .env.
+up: .env
 	@echo "Starting Docker services in detached mode..."
 	docker-compose up -d
+
+# Initialize Let's Encrypt SSL certificates (Production/Staging).
+# Run this once to set up Nginx and Certbot.
+ssl-init: .env
+	@echo "Initializing Let's Encrypt SSL setup..."
+	@chmod +x init-letsencrypt.sh
+	@./init-letsencrypt.sh
 
 # Stop the services.
 down:
