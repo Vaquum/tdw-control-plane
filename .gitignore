@@ -22,3 +22,5 @@ pytest.ini
 
 storage
 logs
+.env
+loop
