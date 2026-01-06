@@ -1,6 +1,32 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "quickstart_etl"
+version = "1.0.11"
+description = "Trades Warehouse Control Plane"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "dagster",
+    "dagster-cloud",
+    "boto3",
+    "pandas",
+    "requests",
+    "matplotlib",
+    "clickhouse-driver",
+    "lz4>=4.0.0",
+    "clickhouse-cityhash>=1.0.2",
+]
+
+[project.optional-dependencies]
+dev = ["dagster-webserver", "pytest"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["tdw_control_plane*"]
+exclude = ["quickstart_etl_tests*"]
 
 [tool.dagster]
 module_name = "tdw_control_plane.definitions"
