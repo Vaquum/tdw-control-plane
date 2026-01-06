@@ -15,3 +15,11 @@
 
 ## 12:40 on 23-08-2025
 - Migrated from `vaquum_tools` to `loop`
+
+## 10:43 on 14-10-2025
+- Enhanced daily_trades_to_tdw.py to achieve feature parity with monthly_trades_to_tdw.py
+- Added robust error handling and resource cleanup with explicit client disconnection
+- Implemented duplicate data handling with automatic deletion before insertion
+- Added statistical verification approach with lightweight checks
+- Enhanced timestamp handling to support both millisecond and microsecond formats
+- Updated configuration to match monthly script patterns
