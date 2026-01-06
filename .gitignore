@@ -9,6 +9,7 @@ __pycache__/
 dist/
 build/
 .eggs/
+.venv
 
 # Unit test / coverage reports
 .pytest_cache/
