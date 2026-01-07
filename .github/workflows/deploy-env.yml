@@ -1,0 +1,35 @@
+name: Deploy Env Vars
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy Image to Registry"]
+    types:
+      - completed
+
+jobs:
+  deploy-env:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create .env file
+        run: |
+          echo "CLICKHOUSE_PASSWORD=${{ secrets.CLICKHOUSE_PASSWORD }}" >> .env
+          echo "JUPYTER_TOKEN=${{ secrets.JUPYTER_TOKEN }}" >> .env
+          echo "METABASE_ADMIN_PASSWORD=${{ secrets.METABASE_ADMIN_PASSWORD }}" >> .env
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.TDW_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          eval $(ssh-agent -s)
+          ssh-add ~/.ssh/deploy_key
+          # Disable host key checking for this workflow
+          echo "StrictHostKeyChecking no" > ~/.ssh/config
+
+      - name: Prepare Server Directory
+        run: ssh root@37.27.112.167 "mkdir -p /opt/tdw-control-plane/"
+
+      - name: Deploy .env to Server
+        run: scp .env root@37.27.112.167:/opt/tdw-control-plane/.env
