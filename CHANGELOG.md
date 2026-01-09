@@ -20,3 +20,8 @@
 
 ## v1.0.11 on 6th of January, 2026
 - Migrated from `setup.py` to `pyproject.toml`
+
+## v1.0.12 on 9th of January, 2026
+- Implemented secure secrets management via .env file injection
+- Removed hardcoded passwords from docker-compose configuration
+- Added GitHub Workflow for secure environment variable deployment
