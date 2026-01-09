@@ -9,7 +9,7 @@ services:
       - ./clickhouse-config.xml:/etc/clickhouse-server/config.d/clickhouse-config.xml
     environment:
       - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=password123
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
       interval: 5s
@@ -27,6 +27,7 @@ services:
       - MB_PLUGINS_DIR=/plugins
       - MB_DB_FILE=/data/metabase.db
       - MB_ENABLE_EMBEDDING=true
+      - METABASE_ADMIN_PASSWORD=${METABASE_ADMIN_PASSWORD}
     volumes:
       - metabase-data:/data
       - ./plugins:/plugins
@@ -93,7 +94,7 @@ services:
         condition: service_healthy
     command: >
       bash -lc "jupyter lab --ip=0.0.0.0 --no-browser --allow-root \
-      --NotebookApp.token='1342084237095993446/1342084357812260895' --NotebookApp.password=''"
+      --NotebookApp.token='${JUPYTER_TOKEN}' --NotebookApp.password=''"
     restart: unless-stopped
 
 volumes:
