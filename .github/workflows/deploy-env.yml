@@ -7,6 +7,7 @@ on:
     types:
       - completed
 
+
 jobs:
   deploy-env:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
@@ -18,18 +19,17 @@ jobs:
           echo "JUPYTER_TOKEN=${{ secrets.JUPYTER_TOKEN }}" >> .env
           echo "METABASE_ADMIN_PASSWORD=${{ secrets.METABASE_ADMIN_PASSWORD }}" >> .env
 
-      - name: Set up SSH
+      - name: Configure SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.TDW_PRIVATE_KEY }}" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          eval $(ssh-agent -s)
-          ssh-add ~/.ssh/deploy_key
-          # Disable host key checking for this workflow
-          echo "StrictHostKeyChecking no" > ~/.ssh/config
+          echo "${{ secrets.TDW_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan 37.27.112.167 >> ~/.ssh/known_hosts
 
       - name: Prepare Server Directory
         run: ssh root@37.27.112.167 "mkdir -p /opt/tdw-control-plane/"
 
       - name: Deploy .env to Server
-        run: scp .env root@37.27.112.167:/opt/tdw-control-plane/.env
+        run: |
+          scp .env root@37.27.112.167:/opt/tdw-control-plane/.env
+
