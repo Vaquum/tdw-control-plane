@@ -1,4 +1,4 @@
-name: Deploy Image To Server
+name: Deploy To Server
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
 
 
 jobs:
-  deploy-image-to-server:
+  deploy-to-server:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -33,7 +33,7 @@ jobs:
         run: |
           scp .env root@37.27.112.167:/opt/tdw-control-plane/.env
 
-      - name: Deploy Image To Server
+      - name: Deploy To Server
         run: |
           ssh root@37.27.112.167 << 'EOF'
             echo "🚀 Starting deployment process..."
