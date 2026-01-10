@@ -17,7 +17,6 @@ h5py
 plotly
 lightgbm
 clickhouse_connect
-git+https://github.com/vaquum/binancial
 git+https://github.com/vaquum/Loop.git
 jupyter-resource-usage<1.0.0
 optuna==3.1.0
