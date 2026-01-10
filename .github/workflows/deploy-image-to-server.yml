@@ -7,20 +7,12 @@ on:
     types:
       - completed
 
-permissions:
-  contents: read
-  packages: read
 
 jobs:
   deploy-image-to-server:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - name: Convert repository name to lowercase
-        id: repo_name
-        run: |
-          echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> ${GITHUB_ENV}
-
       - name: Create .env file
         run: |
           echo "CLICKHOUSE_PASSWORD=${{ secrets.CLICKHOUSE_PASSWORD }}" >> .env
@@ -42,21 +34,14 @@ jobs:
           scp .env root@37.27.112.167:/opt/tdw-control-plane/.env
 
       - name: Deploy Image To Server
-        env:
-          IMAGE_TAG: ghcr.io/${{ env.REPO_LC }}:latest
         run: |
-          # Log in to GHCR on the remote server
-          echo "${{ secrets.GITHUB_TOKEN }}" | ssh root@37.27.112.167 "docker login ghcr.io -u ${{ github.actor }} --password-stdin"
-
-          # Deploy
-          ssh root@37.27.112.167 << EOF
+          ssh root@37.27.112.167 << 'EOF'
             echo "🚀 Starting deployment process..."
             cd /opt/tdw-control-plane && \
             git checkout main && \
             git pull && \
-            docker pull ${IMAGE_TAG} && \
-            docker tag ${IMAGE_TAG} trades-warehouse-dagster:latest && \
             docker-compose down && \
-            docker-compose up -d --no-build && \
+            DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain docker-compose build --no-cache --pull --ssh trades-warehouse && \
+            docker-compose up -d && \
             echo "✅ Deployment complete!"
           EOF
