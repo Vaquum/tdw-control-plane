@@ -6,9 +6,9 @@ lz4
 clickhouse-cityhash
 polars
 pyarrow 
-numpy
+numpy>=1.21.0
+pandas>=1.3.3
 altair
-pandas
 matplotlib
 seaborn
 scikit-learn
