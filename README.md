@@ -4,7 +4,7 @@
   <br>
 </h1>
 
-<h3 align="center">tdw Control Plane</h3>
+<h3 align="center">TDW Control Plane</h3>
 
 <p align="center">
   <a href="#description">Description</a> •
