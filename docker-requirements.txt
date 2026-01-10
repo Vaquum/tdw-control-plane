@@ -14,7 +14,6 @@ seaborn
 scikit-learn
 numba
 h5py
-tslearn
 plotly
 lightgbm
 clickhouse_connect
