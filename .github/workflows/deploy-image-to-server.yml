@@ -1,4 +1,4 @@
-name: Deploy Env Vars
+name: Deploy Image To Server
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ on:
 
 
 jobs:
-  deploy-env:
+  deploy-image-to-server:
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
@@ -33,3 +33,15 @@ jobs:
         run: |
           scp .env root@37.27.112.167:/opt/tdw-control-plane/.env
 
+      - name: Deploy Image To Server
+        run: |
+          ssh root@37.27.112.167 << 'EOF'
+            echo "🚀 Starting deployment process..."
+            cd /opt/tdw-control-plane && \
+            git checkout main && \
+            git pull && \
+            docker-compose down && \
+            DOCKER_BUILDKIT=1 BUILDKIT_PROGRESS=plain docker-compose build --no-cache --pull --ssh trades-warehouse && \
+            docker-compose up -d && \
+            echo "✅ Deployment complete!"
+          EOF
