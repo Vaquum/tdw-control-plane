@@ -16,7 +16,7 @@
 
 ## Description
 
-Control Plane for `trade-warehouse` (tdw). 
+Control plane for `trade-warehouse` (tdw). 
 
 ## Owner
 
