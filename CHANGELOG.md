@@ -25,3 +25,7 @@
 - Implemented secure secrets management via .env file injection
 - Removed hardcoded passwords from docker-compose configuration
 - Added GitHub Workflow for secure environment variable deployment
+
+## v1.0.13 on 19th of January, 2026
+- Fixed dagster deployment errors by restoring `check_if_has_header.py` utility.
+- Migrated dependency from `Loop` to `vaquum_limen` in `monthly_futures_agg_trades_to_tdw`.
