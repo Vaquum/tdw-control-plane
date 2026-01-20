@@ -84,6 +84,7 @@ services:
     working_dir: /opt/notebooks
     environment:
       - PYTHONPATH=/opt/app
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
     volumes:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
@@ -92,9 +93,7 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
-    command: >
-      bash -lc "jupyter lab --ip=0.0.0.0 --no-browser --allow-root \
-      --NotebookApp.token='${JUPYTER_TOKEN}' --NotebookApp.password=''"
+    command: /opt/setup-jupyter.sh
     restart: unless-stopped
 
 volumes:
