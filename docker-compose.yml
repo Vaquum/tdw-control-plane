@@ -84,6 +84,7 @@ services:
     working_dir: /opt/notebooks
     environment:
       - PYTHONPATH=/opt/app
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN}
     volumes:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
