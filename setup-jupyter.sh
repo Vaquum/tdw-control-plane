@@ -50,4 +50,3 @@ echo "Starting Jupyter Lab..."
 # Start Jupyter Lab
 exec jupyter lab --ip=0.0.0.0 --no-browser --allow-root \
   --NotebookApp.token="${JUPYTER_TOKEN}" --NotebookApp.password=''
-
