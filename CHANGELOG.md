@@ -43,7 +43,7 @@
 
 - Added Keyboard Shortcuts for JupyterLab to `run-all-cells` and `restart-kernal-and-run-all-cells`
 
-## v1.0.15 on 3rd of February, 2026
+## v1.1.0 on 3rd of February, 2026
 
 - Removed `tabix` and `metabase` images from docker
 - Removed `metbase-data` and `grafana-data` volumes from docker
