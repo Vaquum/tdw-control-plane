@@ -4,20 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "quickstart_etl"
-version = "1.0.13"
+version = "1.0.14"
 description = "Trades Warehouse Control Plane"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "dagster",
-    "dagster-cloud",
-    "boto3",
-    "pandas",
-    "requests",
-    "matplotlib",
-    "clickhouse-driver",
-    "lz4>=4.0.0",
-    "clickhouse-cityhash>=1.0.2",
+  "dagster",
+  "dagster-cloud",
+  "boto3",
+  "pandas",
+  "requests",
+  "matplotlib",
+  "clickhouse-driver",
+  "lz4>=4.0.0",
+  "clickhouse-cityhash>=1.0.2",
 ]
 
 [project.optional-dependencies]
