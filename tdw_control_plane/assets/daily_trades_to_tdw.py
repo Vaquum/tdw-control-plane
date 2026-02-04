@@ -14,7 +14,7 @@ CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
-CLICKHOUSE_TABLE = os.environ.get("CLICKHOUSE_TABLE", "binance_trades")
+CLICKHOUSE_TABLE = os.environ.get("CLICKHOUSE_TABLE", "binance_trades_v2")
 
 daily_partitions = DailyPartitionsDefinition(start_date="2017-08-17")
 
