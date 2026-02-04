@@ -56,3 +56,4 @@
 - Added statistical verification approach with lightweight checks
 - Enhanced timestamp handling to support both millisecond and microsecond formats
 - Updated configuration to match monthly script patterns
+- Created new dagit job for creating db `origo` and a table for it `binance_trades`
