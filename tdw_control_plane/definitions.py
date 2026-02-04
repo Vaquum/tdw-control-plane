@@ -26,6 +26,8 @@ from .assets.create_binance_futures_trades_table import create_binance_futures_t
 from .assets.monthly_futures_trades_to_tdw import insert_monthly_binance_futures_trades_to_tdw
 from .assets.monthly_futures_agg_trades_to_tdw import create_binance_futures_agg_trades_table
 from .assets.monthly_futures_agg_trades_to_tdw import insert_monthly_binance_futures_agg_trades_to_tdw
+from .assets.create_origo_database import create_origo_database
+from .assets.create_binance_trades_table_origo import create_binance_trades_table_origo
 
 
 # Database Maintenance Jobs
@@ -34,9 +36,19 @@ create_tdw_database_job = define_asset_job(
     name="create_tdw_database_job",
     selection=["create_tdw_database"])
 
+create_origo_database_job = define_asset_job(
+    name="create_origo_database_job",
+    selection=["create_origo_database"]
+)
+
 create_binance_trades_table_job = define_asset_job(
     name="create_binance_trades_table_job",
     selection=["create_binance_trades_table"])
+
+create_binance_trades_table_origo_job = define_asset_job(
+    name="create_binance_trades_table_origo_job",
+    selection=["create_binance_trades_table_origo"]
+)
 
 create_binance_agg_trades_table_job = define_asset_job(
     name="create_binance_agg_trades_table_job",
@@ -113,7 +125,9 @@ def daily_pipeline_schedule():
 
 defs = Definitions(
     assets=[create_tdw_database,
+            create_origo_database,
             create_binance_trades_table,
+            create_binance_trades_table_origo,
             insert_monthly_binance_trades_to_tdw,
             insert_daily_binance_trades_to_tdw,
             create_binance_trades_monthly_summary,
@@ -133,7 +147,9 @@ defs = Definitions(
     schedules=[daily_pipeline_schedule],
     
     jobs=[create_tdw_database_job,
+          create_origo_database_job,
           create_binance_trades_table_job,
+          create_binance_trades_table_origo_job,
           insert_monthly_binance_trades_job,
           insert_daily_binance_trades_job,
           create_binance_trades_monthly_summary_job,
