@@ -7,25 +7,22 @@ from datetime import datetime, timedelta
 from io import BytesIO
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import asset, DailyPartitionsDefinition
-from datetime import date
 
 # Configure Clickhouse connection
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "37.27.112.187")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
-CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'tdw')
-CLICKHOUSE_TABLE = os.environ.get('CLICKHOUSE_TABLE', 'binance_trades')
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
+CLICKHOUSE_TABLE = os.environ.get("CLICKHOUSE_TABLE", "binance_trades")
 
-daily_partitions = DailyPartitionsDefinition(
-    start_date='2017-08-17'
-)
+daily_partitions = DailyPartitionsDefinition(start_date="2017-08-17")
 
 
 @asset(
     partitions_def=daily_partitions,
-    group_name='binance_data',
-    description='Downloads, validates, extracts, and loads Binance BTC trade data into Clickhouse'
+    group_name="binance_data",
+    description="Downloads, validates, extracts, and loads Binance BTC trade data into Clickhouse",
 )
 def insert_daily_binance_trades_to_tdw(context):
     # Get the selected partition key (YYYY-MM-DD format)
@@ -40,18 +37,21 @@ def insert_daily_binance_trades_to_tdw(context):
         date_str = partition_date_str
 
     # Generate the day string for the selected partition
-    day_str = f'BTCUSDT-trades-{date_str}.zip'
-    context.log.info(f"Processing selected partition: {partition_date_str}, file: {day_str}")
+    day_str = f"BTCUSDT-trades-{date_str}.zip"
+    context.log.info(
+        f"Processing selected partition: {partition_date_str}, file: {day_str}"
+    )
 
     # Process only the selected day
     result = _process_day(context, day_str, date_str)
 
     return result
 
+
 def _process_day(context, day_str, date_str):
-    base_url = 'https://data.binance.vision/data/spot/daily/trades/BTCUSDT/'
+    base_url = "https://data.binance.vision/data/spot/daily/trades/BTCUSDT/"
     file_url = base_url + day_str
-    checksum_url = file_url + '.CHECKSUM'
+    checksum_url = file_url + ".CHECKSUM"
 
     # Download and verify checksum
     context.log.info(f"Downloading checksum from {checksum_url}")
@@ -66,13 +66,17 @@ def _process_day(context, day_str, date_str):
     response = requests.get(file_url)
     response.raise_for_status()
     zip_data = response.content
-    context.log.info(f"Downloaded {len(zip_data)/1024/1024:.2f} MB of data")
+    context.log.info(f"Downloaded {len(zip_data) / 1024 / 1024:.2f} MB of data")
 
     actual_checksum = hashlib.sha256(zip_data).hexdigest()
     context.log.info(f"Actual checksum: {actual_checksum}")
     if actual_checksum != expected_checksum:
-        context.log.error(f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}")
-        raise ValueError(f'Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}')
+        context.log.error(
+            f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
+        )
+        raise ValueError(
+            f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
+        )
 
     csv_content = None
     csv_filename = None
@@ -94,9 +98,8 @@ def _process_day(context, day_str, date_str):
     context.log.info("Parsing CSV data")
     data = []
 
-    csv_text = csv_content.decode('utf-8')
+    csv_text = csv_content.decode("utf-8")
     reader = csv.reader(csv_text.splitlines())
-    headers = next(reader)
 
     row_count = 0
     for row in reader:
@@ -106,8 +109,8 @@ def _process_day(context, day_str, date_str):
         quantity = float(row[2])
         quote_quantity = float(row[3])
         timestamp = int(row[4])
-        is_buyer_maker = row[5].lower() == 'true'
-        is_best_match = row[6].lower() == 'true'
+        is_buyer_maker = row[5].lower() == "true"
+        is_best_match = row[6].lower() == "true"
 
         # Binance started with milliseconds, then switched to microseconds
         if len(str(timestamp)) == 13:
@@ -119,16 +122,18 @@ def _process_day(context, day_str, date_str):
         else:
             raise ValueError(f"Invalid timestamp length: {timestamp}")
 
-        data.append((
-            trade_id,
-            price,
-            quantity,
-            quote_quantity,
-            timestamp,
-            is_buyer_maker,
-            is_best_match,
-            dt
-        ))
+        data.append(
+            (
+                trade_id,
+                price,
+                quantity,
+                quote_quantity,
+                timestamp,
+                is_buyer_maker,
+                is_best_match,
+                dt,
+            )
+        )
 
     context.log.info(f"Parsed {row_count} rows from CSV")
 
@@ -142,7 +147,9 @@ def _process_day(context, day_str, date_str):
     # Connect to ClickHouse
     client = None
     try:
-        context.log.info(f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}")
+        context.log.info(
+            f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}"
+        )
         client = ClickhouseClient(
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
@@ -155,27 +162,29 @@ def _process_day(context, day_str, date_str):
 
         # Check if data already exists for this day
         context.log.info(f"Checking for existing data for {date_str}")
-        check_result = client.execute(f'''
+        check_result = client.execute(f"""
             SELECT count(*)
             FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
             WHERE toDate(datetime) = toDate('{date_str}')
-        ''')
+        """)
 
         existing_count = check_result[0][0]
 
         # If data exists, delete it before inserting new data
         if existing_count > 0:
-            context.log.info(f"Found {existing_count} existing records for {date_str}. Deleting before reinserting.")
-            client.execute(f'''
+            context.log.info(
+                f"Found {existing_count} existing records for {date_str}. Deleting before reinserting."
+            )
+            client.execute(f"""
                 ALTER TABLE {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
                 DELETE WHERE toDate(datetime) = toDate('{date_str}')
-            ''')
+            """)
             context.log.info(f"Deleted existing data for {date_str}")
 
         # Insert data
         context.log.info(f"Inserting {len(data)} rows into ClickHouse")
         client.execute(
-            f'''
+            f"""
             INSERT INTO {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
             (
                 trade_id,
@@ -188,25 +197,25 @@ def _process_day(context, day_str, date_str):
                 datetime
             ) SETTINGS async_insert=1, wait_for_async_insert=1
             VALUES
-            ''',
+            """,
             data,
-            settings={'max_execution_time': 900}
+            settings={"max_execution_time": 900},
         )
         context.log.info("Data insertion completed")
 
         # Verify insertion
         context.log.info("Verifying data insertion")
-        result = client.execute(f'''
+        result = client.execute(f"""
             SELECT count(*)
             FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
             WHERE toDate(datetime) = toDate('{date_str}')
-        ''')
+        """)
         inserted_count = result[0][0]
         context.log.info(f"Found {inserted_count} rows in ClickHouse after insertion")
 
         # Get quick stats instead of expensive hash
         context.log.info("Computing verification statistics")
-        stats_result = client.execute(f'''
+        stats_result = client.execute(f"""
             SELECT
                 min(trade_id),
                 max(trade_id),
@@ -214,26 +223,30 @@ def _process_day(context, day_str, date_str):
                 count(distinct trade_id) % 1000 -- lightweight uniqueness check (modulo to keep it small)
             FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
             WHERE toDate(datetime) = toDate('{date_str}')
-        ''')
+        """)
 
         data_verification = {
-            'min_trade_id': stats_result[0][0],
-            'max_trade_id': stats_result[0][1],
-            'avg_price': stats_result[0][2],
-            'id_uniqueness_check': stats_result[0][3]
+            "min_trade_id": stats_result[0][0],
+            "max_trade_id": stats_result[0][1],
+            "avg_price": stats_result[0][2],
+            "id_uniqueness_check": stats_result[0][3],
         }
         context.log.info(f"Data verification stats: {data_verification}")
 
         if inserted_count != len(data):
-            context.log.error(f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}")
-            raise ValueError(f'Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}')
+            context.log.error(
+                f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}"
+            )
+            raise ValueError(
+                f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}"
+            )
 
         result_data = {
-            'date': day_str,
-            'rows_inserted': inserted_count,
-            'zip_checksum': actual_checksum,
-            'csv_checksum': csv_checksum,
-            'data_verification': data_verification
+            "date": day_str,
+            "rows_inserted": inserted_count,
+            "zip_checksum": actual_checksum,
+            "csv_checksum": csv_checksum,
+            "data_verification": data_verification,
         }
 
         context.log.info(f"Successfully processed {day_str}")
@@ -250,13 +263,3 @@ def _process_day(context, day_str, date_str):
                 pass
         # Clear large variables to help garbage collection
         data = None
-
-def _compute_sha256(data):
-    if isinstance(data, bytes):
-        return hashlib.sha256(data).hexdigest()
-    else:
-        sha256_hash = hashlib.sha256()
-        for byte_block in iter(lambda: data.read(4096), b""):
-            sha256_hash.update(byte_block)
-        data.seek(0)
-        return sha256_hash.hexdigest()
