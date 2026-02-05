@@ -47,3 +47,13 @@
 
 - Removed `tabix` and `metabase` images from docker
 - Removed `metbase-data` and `grafana-data` volumes from docker
+
+## v1.1.1 on 4th of February, 2026
+
+- Enhanced daily_trades_to_tdw.py to achieve feature parity with monthly_trades_to_tdw.py
+- Added robust error handling and resource cleanup with explicit client disconnection
+- Implemented duplicate data handling with automatic deletion before insertion
+- Added statistical verification approach with lightweight checks
+- Enhanced timestamp handling to support both millisecond and microsecond formats
+- Updated configuration to match monthly script patterns
+- Created new dagit job for creating db `origo` and a table for it `binance_trades`
