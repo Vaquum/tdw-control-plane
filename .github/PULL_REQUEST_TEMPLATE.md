@@ -8,7 +8,7 @@ _(Fill in at least a short description of the intent of the change.)_
 
 - [ ] I have reviewed full diff in “Files changed”
 - [ ] I left no unnecessary files in the changes
-- [ ] I ran `python tests/run.py` locally without errors (where applicable)
+- [ ] I ran the project's test suite locally without errors (where applicable)
 - [ ] I updated `/docs` (if behavior/API/config/user/etc changed)
 - [ ] I added and/or updated docstrings as per [Writing Docstrings](https://github.com/Vaquum/Limen/blob/main/docs/Developer/Writing-Docstrings.md) (for any changed public functions/classes)
 - [ ] I updated CHANGELOG.md (unless only docs or other non-code aspect was changed)
