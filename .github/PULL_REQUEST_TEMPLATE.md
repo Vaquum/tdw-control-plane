@@ -2,7 +2,7 @@
 
 ## What does this PR change?
 
-_(Fill in at least a short description of the the intent of the change.)_
+_(Fill in at least a short description of the intent of the change.)_
 
 ## Checklist
 
