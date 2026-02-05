@@ -9,7 +9,7 @@
 
 from dagster import Definitions, define_asset_job, schedule
 
-from .assets.daily_trades_to_tdw import insert_daily_binance_trades_to_tdw
+from .assets.daily_trades_to_origo import insert_daily_binance_trades_to_origo
 from .assets.monthly_trades_to_tdw import insert_monthly_binance_trades_to_tdw
 from .assets.create_tdw_database import create_tdw_database
 from .assets.create_binance_trades_table import create_binance_trades_table
@@ -69,8 +69,8 @@ insert_monthly_binance_trades_job = define_asset_job(
     selection=["insert_monthly_binance_trades_to_tdw"])
 
 insert_daily_binance_trades_job = define_asset_job(
-    name="insert_daily_trades_to_tdw_job",
-    selection=["insert_daily_binance_trades_to_tdw"])
+    name="insert_daily_trades_to_origo_job",
+    selection=["insert_daily_binance_trades_to_origo"])
 
 insert_monthly_binance_agg_trades_job = define_asset_job(
     name="insert_monthly_agg_trades_to_tdw_job",
@@ -129,7 +129,7 @@ defs = Definitions(
             create_binance_trades_table,
             create_binance_trades_table_origo,
             insert_monthly_binance_trades_to_tdw,
-            insert_daily_binance_trades_to_tdw,
+            insert_daily_binance_trades_to_origo,
             create_binance_trades_monthly_summary,
             create_binance_trades_daily_summary,
             create_binance_trades_hourly_summary,

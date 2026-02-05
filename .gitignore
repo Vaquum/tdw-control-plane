@@ -25,3 +25,4 @@ storage
 logs
 .env
 loop
+*.local.yml
