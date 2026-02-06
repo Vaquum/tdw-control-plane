@@ -51,26 +51,6 @@ services:
     command: dagster-daemon run
     restart: unless-stopped
 
-  jupyter:
-    build: .
-    image: trades-warehouse-dagster:latest
-    network_mode: "host"
-    ports:
-      - "9999:8888"
-    working_dir: /opt/notebooks
-    environment:
-      - PYTHONPATH=/opt/app
-    volumes:
-      - .:/opt/app
-      - dagster-instance:/opt/dagster-instance
-      - /data/notebooks:/opt/notebooks
-      - /data/experiments:/opt/experiments
-    depends_on:
-      clickhouse:
-        condition: service_healthy
-    command: /opt/setup-jupyter.sh
-    restart: unless-stopped
-
 volumes:
   clickhouse-data:
   dagster-instance:
