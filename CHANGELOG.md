@@ -57,3 +57,7 @@
 - Enhanced timestamp handling to support both millisecond and microsecond formats
 - Updated configuration to match monthly script patterns
 - Created new dagit job for creating db `origo` and a table for it `binance_trades`
+
+## v1.2.0 on 6th of February, 2026
+
+- Removed `jupyterlab` from docker
