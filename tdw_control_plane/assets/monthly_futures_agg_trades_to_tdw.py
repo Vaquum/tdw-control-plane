@@ -1,6 +1,6 @@
 import os
 
-from limen.data._internal.binance_file_to_polars import binance_file_to_polars
+from tdw_control_plane.utils.binance_file_to_polars import binance_file_to_polars
 from tdw_control_plane.utils.check_if_has_header import check_if_has_header
 
 from dagster import asset, AssetExecutionContext, MonthlyPartitionsDefinition
