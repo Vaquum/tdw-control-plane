@@ -61,3 +61,8 @@
 ## v1.2.0 on 6th of February, 2026
 
 - Removed `jupyterlab` from docker
+
+## v1.2.1 on 7th of February, 2026
+
+- Removed unnecessary packages
+- Removed `.telemetry`, `notebooks/work-in-progress/notebooks` and `plugins` directories
