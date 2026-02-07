@@ -26,3 +26,6 @@ logs
 .env
 loop
 *.local.yml
+.telemetry
+plugins/
+
