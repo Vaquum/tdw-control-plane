@@ -293,14 +293,20 @@ def get_changed_files():
         return ''
 
 
-def read_changelog():
-    """Read current CHANGELOG.md content (last 2 releases only to avoid context overflow)"""
+def read_changelog_full():
+    """Read current full CHANGELOG.md content"""
     changelog_path = Path('CHANGELOG.md')
     if not changelog_path.exists():
         return '# Changelog\n'
     
     with open(changelog_path, 'r') as f:
-        content = f.read()
+        return f.read()
+
+
+def get_changelog_for_prompt(content):
+    """Get truncated changelog (last 2 releases only) for Claude prompt to avoid context overflow"""
+    if not content or content.strip() == '# Changelog':
+        return content
     
     # Extract only the header and last 2 release blocks to keep prompt size reasonable
     lines = content.split('\n')
@@ -341,7 +347,8 @@ def main():
         sys.exit(0)
     
     changed_files = get_changed_files()
-    current_changelog = read_changelog()
+    current_changelog_full = read_changelog_full()
+    current_changelog_for_prompt = get_changelog_for_prompt(current_changelog_full)
     
     # Get current date for the release (use UTC for deterministic timestamps)
     now = datetime.now(timezone.utc)
@@ -375,7 +382,7 @@ Here are the STRICT guidelines you MUST follow:
 {changed_files}
 
 **CURRENT CHANGELOG.md:**
-{current_changelog}
+{current_changelog_for_prompt}
 
 **OUTPUT FORMAT:**
 Provide your response in the following exact format:
@@ -444,25 +451,29 @@ IMPORTANT REMINDERS:
         changelog_lines.append('')
         changelog_entry = '\n'.join(changelog_lines)
         
-        # Validate changelog entry starts with expected heading format
-        if not changelog_entry.startswith(f'## v{new_version}'):
-            print(f'Error: Changelog entry does not start with expected heading "## v{new_version}"')
-            print(f'Got: {changelog_entry[:100]}...')
+        # Validate changelog entry heading matches the required format:
+        # "## v<version> on D{suffix} of Month, YYYY"
+        heading_line = changelog_lines[0] if changelog_lines else ''
+        heading_pattern = rf'^## v{re.escape(new_version)} on ([1-9]|[12][0-9]|3[01])(st|nd|rd|th) of (January|February|March|April|May|June|July|August|September|October|November|December), \d{{4}}$'
+        if not re.match(heading_pattern, heading_line):
+            print(f'Error: Changelog heading does not match required format for version {new_version}')
+            print(f'Expected format: ## v{new_version} on D{{suffix}} of Month, YYYY')
+            print(f'Got: {heading_line}')
             sys.exit(1)
         
         # Update version in pyproject.toml
         update_version_in_pyproject(new_version)
         
-        # Update CHANGELOG.md
+        # Update CHANGELOG.md with full content
         changelog_path = Path('CHANGELOG.md')
         
-        # Append the new entry
-        if current_changelog.strip() == '# Changelog':
+        # Append the new entry (changelog_entry already has exactly one trailing blank line)
+        if current_changelog_full.strip() == '# Changelog':
             # First entry
-            new_changelog = f'{current_changelog.strip()}\n\n{changelog_entry}\n'
+            new_changelog = f'{current_changelog_full.strip()}\n\n{changelog_entry}'
         else:
             # Append to existing changelog
-            new_changelog = f'{current_changelog.strip()}\n\n{changelog_entry}\n'
+            new_changelog = f'{current_changelog_full.strip()}\n\n{changelog_entry}'
         
         with open(changelog_path, 'w') as f:
             f.write(new_changelog)
