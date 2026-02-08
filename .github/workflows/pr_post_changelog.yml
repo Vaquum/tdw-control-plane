@@ -15,7 +15,6 @@ jobs:
   update_changelog:
     name: Update CHANGELOG and Version
     runs-on: ubuntu-latest
-    if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     permissions:
       contents: write
     
