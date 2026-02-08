@@ -1,0 +1,61 @@
+name: PR CHANGELOG Update
+
+on:
+  pull_request:
+    types: [labeled, synchronize]
+    branches: [main]
+
+concurrency:
+  group: changelog-update-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  update_changelog:
+    name: Update CHANGELOG and Version
+    # Only run if the PR has the 'update-changelog' label OR if it's a sync event and already has the label
+    if: |
+      (github.event.action == 'labeled' && github.event.label.name == 'update-changelog') ||
+      (github.event.action == 'synchronize' && contains(github.event.pull_request.labels.*.name, 'update-changelog'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # Fetch all history for git log analysis
+          
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install 'anthropic>=0.79.0,<1.0.0' tomlkit==0.13.2
+      
+      - name: Update CHANGELOG and bump version with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/update_changelog.py
+      
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are changes to commit
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git add pyproject.toml CHANGELOG.md
+          git commit -m "chore: update CHANGELOG.md and bump version [automated]"
+          git push
