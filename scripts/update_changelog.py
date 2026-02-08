@@ -6,13 +6,14 @@ following strict guidelines from https://github.com/Vaquum/dev-docs/blob/main/sr
 """
 
 import os
+import re
 import subprocess
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import anthropic
-import toml
+import tomlkit
 
 
 CHANGELOG_GUIDELINES = """
@@ -208,22 +209,22 @@ def get_current_version():
         sys.exit(1)
     
     with open(pyproject_path, 'r') as f:
-        data = toml.load(f)
+        data = tomlkit.load(f)
     
     return data['project']['version']
 
 
 def update_version_in_pyproject(new_version):
-    """Update version in pyproject.toml"""
+    """Update version in pyproject.toml using format-preserving tomlkit"""
     pyproject_path = Path('pyproject.toml')
     
     with open(pyproject_path, 'r') as f:
-        data = toml.load(f)
+        data = tomlkit.load(f)
     
     data['project']['version'] = new_version
     
     with open(pyproject_path, 'w') as f:
-        toml.dump(data, f)
+        f.write(tomlkit.dumps(data))
     
     print(f'Updated version in pyproject.toml to {new_version}')
 
@@ -247,9 +248,9 @@ def get_recent_commits():
                 text=True
             )
         else:
-            # No tags exist, get all commits
+            # No tags exist, get recent commits (limit to last 50 to avoid unbounded growth)
             result = subprocess.run(
-                ['git', 'log', '--oneline', '--no-merges'],
+                ['git', 'log', '--oneline', '--no-merges', '-50'],
                 capture_output=True,
                 text=True
             )
@@ -293,13 +294,33 @@ def get_changed_files():
 
 
 def read_changelog():
-    """Read current CHANGELOG.md content"""
+    """Read current CHANGELOG.md content (last 2 releases only to avoid context overflow)"""
     changelog_path = Path('CHANGELOG.md')
     if not changelog_path.exists():
         return '# Changelog\n'
     
     with open(changelog_path, 'r') as f:
-        return f.read()
+        content = f.read()
+    
+    # Extract only the header and last 2 release blocks to keep prompt size reasonable
+    lines = content.split('\n')
+    if len(lines) <= 10:
+        return content
+    
+    # Find release headings (lines starting with ## v)
+    release_indices = [i for i, line in enumerate(lines) if line.startswith('## v')]
+    
+    if len(release_indices) <= 2:
+        return content
+    
+    # Return header + last 2 releases
+    header_end = release_indices[0] if release_indices else 1
+    last_two_start = release_indices[-2]
+    
+    header = '\n'.join(lines[:header_end])
+    last_two = '\n'.join(lines[last_two_start:])
+    
+    return f'{header}\n...\n(showing last 2 releases)\n\n{last_two}'
 
 
 def main():
@@ -322,8 +343,8 @@ def main():
     changed_files = get_changed_files()
     current_changelog = read_changelog()
     
-    # Get current date for the release
-    now = datetime.now()
+    # Get current date for the release (use UTC for deterministic timestamps)
+    now = datetime.now(timezone.utc)
     
     # Create the prompt for Claude
     prompt = f"""You are an expert at maintaining changelogs and versioning software following strict guidelines.
@@ -389,7 +410,7 @@ IMPORTANT REMINDERS:
         print(response_text)
         print('\n' + '='*80 + '\n')
         
-        # Parse the response
+        # Parse the response with strict validation
         lines = response_text.split('\n')
         new_version = None
         changelog_entry_lines = []
@@ -407,7 +428,27 @@ IMPORTANT REMINDERS:
             print('Error: Could not parse new version from Claude response')
             sys.exit(1)
         
-        changelog_entry = '\n'.join(changelog_entry_lines).strip()
+        # Validate version is valid SemVer
+        if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+            print(f'Error: Invalid SemVer version: {new_version}')
+            sys.exit(1)
+        
+        # Preserve internal newlines but normalize trailing blank lines:
+        # remove all trailing empty/whitespace-only lines, then add exactly one.
+        changelog_entry_raw = '\n'.join(changelog_entry_lines)
+        changelog_lines = changelog_entry_raw.split('\n')
+        
+        while changelog_lines and changelog_lines[-1].strip() == '':
+            changelog_lines.pop()
+        
+        changelog_lines.append('')
+        changelog_entry = '\n'.join(changelog_lines)
+        
+        # Validate changelog entry starts with expected heading format
+        if not changelog_entry.startswith(f'## v{new_version}'):
+            print(f'Error: Changelog entry does not start with expected heading "## v{new_version}"')
+            print(f'Got: {changelog_entry[:100]}...')
+            sys.exit(1)
         
         # Update version in pyproject.toml
         update_version_in_pyproject(new_version)
