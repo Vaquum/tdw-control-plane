@@ -3,6 +3,9 @@ name: Post-Merge CHANGELOG Update
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'CHANGELOG.md'
+      - 'pyproject.toml'
 
 concurrency:
   group: changelog-update
