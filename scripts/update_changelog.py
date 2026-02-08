@@ -204,7 +204,7 @@ def get_current_version():
     """Read current version from pyproject.toml"""
     pyproject_path = Path('pyproject.toml')
     if not pyproject_path.exists():
-        print('Error: pyproject.toml not found')
+        print(f'Error: pyproject.toml not found in {Path.cwd()}')
         sys.exit(1)
     
     with open(pyproject_path, 'r') as f:
