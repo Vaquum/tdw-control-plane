@@ -25,7 +25,7 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install anthropic toml
+          pip install anthropic==0.39.0 toml==0.10.2
       
       - name: Update CHANGELOG and bump version with Claude
         env:
