@@ -34,6 +34,21 @@ jobs:
         run: |
           pip install anthropic==0.39.0 tomlkit==0.13.2
       
+      - name: Verify ANTHROPIC_API_KEY is available
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "::error::ANTHROPIC_API_KEY secret is not available to this repository"
+            echo "::error::Please check:"
+            echo "::error::1. Organization Settings → Secrets and variables → Actions"
+            echo "::error::2. Find ANTHROPIC_API_KEY in organization secrets"
+            echo "::error::3. Ensure 'tdw-control-plane' repository is in the access list"
+            echo "::error::4. Or create the secret at repository level instead"
+            exit 1
+          fi
+          echo "ANTHROPIC_API_KEY is available (length: ${#ANTHROPIC_API_KEY} characters)"
+      
       - name: Update CHANGELOG and bump version with Claude
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
