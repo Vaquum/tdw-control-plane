@@ -435,8 +435,8 @@ IMPORTANT REMINDERS:
             print('Error: Could not parse new version from Claude response')
             sys.exit(1)
         
-        # Validate version is valid SemVer
-        if not re.match(r'^\d+\.\d+\.\d+$', new_version):
+        # Validate version is valid SemVer (no leading zeros in numeric components)
+        if not re.match(r'^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$', new_version):
             print(f'Error: Invalid SemVer version: {new_version}')
             sys.exit(1)
         
