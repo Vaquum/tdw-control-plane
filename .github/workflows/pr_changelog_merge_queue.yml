@@ -15,6 +15,10 @@ jobs:
       contents: write
       pull-requests: read
     
+    # Note: This workflow requires write access to the PR head branch.
+    # For fork PRs, ensure your merge queue settings require approval
+    # or restrict this workflow to trusted contributors only.
+    
     steps:
       - name: Get PR details from merge group
         id: pr_info
