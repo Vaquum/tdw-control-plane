@@ -5,7 +5,7 @@ on:
 
 concurrency:
   group: changelog-update-${{ github.event.merge_group.head_sha }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   update_changelog:
@@ -47,6 +47,13 @@ jobs:
             
             core.setOutput('head_ref', pr.head.ref);
             core.setOutput('head_sha', pr.head.sha);
+            
+            // Check if PR is from a fork
+            if (!pr.head.repo || pr.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo) {
+              core.setFailed('This workflow only supports PRs from the same repository, not forks. Fork PRs must be approved and merged manually.');
+              return;
+            }
+            
             core.setOutput('head_repo', pr.head.repo.full_name);
             
             core.info(`PR #${prNumber}: ${pr.head.repo.full_name}/${pr.head.ref} @ ${pr.head.sha}`);
