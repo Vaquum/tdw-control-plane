@@ -1,4 +1,4 @@
-name: Auto-update CHANGELOG on Merge Queue
+name: Post-Merge CHANGELOG Update
 
 on:
   merge_group:
