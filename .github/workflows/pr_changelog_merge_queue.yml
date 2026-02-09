@@ -1,0 +1,108 @@
+name: Auto-update CHANGELOG on Merge Queue
+
+on:
+  merge_group:
+
+concurrency:
+  group: changelog-update-${{ github.event.merge_group.head_sha }}
+  cancel-in-progress: true
+
+jobs:
+  update_changelog:
+    name: Update CHANGELOG and Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    
+    steps:
+      - name: Get PR details from merge group
+        id: pr_info
+        uses: actions/github-script@v7
+        with:
+          script: |
+            // Extract PR number from merge group head_ref
+            // Format: gh-readonly-queue/main/pr-123-abc123
+            const headRef = context.payload.merge_group.head_ref;
+            const match = headRef.match(/pr-(\d+)-/);
+            
+            if (!match) {
+              core.setFailed('Could not extract PR number from merge group ref: ' + headRef);
+              return;
+            }
+            
+            const prNumber = parseInt(match[1], 10);
+            core.setOutput('pr_number', prNumber);
+            
+            // Get PR details
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: prNumber
+            });
+            
+            core.setOutput('head_ref', pr.head.ref);
+            core.setOutput('head_sha', pr.head.sha);
+            core.setOutput('head_repo', pr.head.repo.full_name);
+            
+            core.info(`PR #${prNumber}: ${pr.head.repo.full_name}/${pr.head.ref} @ ${pr.head.sha}`);
+      
+      - name: Checkout PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pr_info.outputs.head_ref }}
+          repository: ${{ steps.pr_info.outputs.head_repo }}
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Check if changelog was already updated
+        id: check_existing
+        run: |
+          # Check if the last commit was made by github-actions bot for changelog
+          LAST_COMMIT_MSG=$(git log -1 --pretty=%B)
+          LAST_COMMIT_AUTHOR=$(git log -1 --pretty=%an)
+          
+          if [[ "$LAST_COMMIT_AUTHOR" == "github-actions[bot]" ]] && [[ "$LAST_COMMIT_MSG" == *"update CHANGELOG.md and bump version"* ]]; then
+            echo "already_updated=true" >> $GITHUB_OUTPUT
+            echo "Changelog already updated - skipping to prevent duplicate commits"
+          else
+            echo "already_updated=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Set up Python
+        if: steps.check_existing.outputs.already_updated != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        if: steps.check_existing.outputs.already_updated != 'true'
+        run: |
+          pip install 'anthropic>=0.79.0,<1.0.0' tomlkit==0.13.2
+      
+      - name: Update CHANGELOG and bump version
+        if: steps.check_existing.outputs.already_updated != 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python scripts/update_changelog.py
+      
+      - name: Commit and push changes to PR head branch
+        if: steps.check_existing.outputs.already_updated != 'true'
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are changes to commit
+          if git diff --quiet; then
+            echo "No changes to commit - changelog is already up to date"
+            exit 0
+          fi
+          
+          git add pyproject.toml CHANGELOG.md
+          git commit -m "chore: update CHANGELOG.md and bump version [skip ci]"
+          
+          # Push to the PR head branch (not main)
+          git push origin HEAD:${{ steps.pr_info.outputs.head_ref }}
+          
+          echo "Successfully pushed changelog update to PR branch"
