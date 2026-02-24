@@ -25,17 +25,20 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Extract PR number from merge group head_ref
-            // Format: gh-readonly-queue/main/pr-123-abc123
-            const headRef = context.payload.merge_group.head_ref;
-            const match = headRef.match(/pr-(\d+)-/);
+            // Extract PR number from merge group payload
+            const mergeGroup = context.payload.merge_group;
             
-            if (!match) {
-              core.setFailed('Could not extract PR number from merge group ref: ' + headRef);
+            if (!mergeGroup || !Array.isArray(mergeGroup.pull_requests) || mergeGroup.pull_requests.length === 0) {
+              core.setFailed('Merge group payload does not contain any pull requests.');
               return;
             }
             
-            const prNumber = parseInt(match[1], 10);
+            if (mergeGroup.pull_requests.length !== 1) {
+              core.setFailed(`Expected merge group to contain exactly 1 pull request, but found ${mergeGroup.pull_requests.length}.`);
+              return;
+            }
+            
+            const prNumber = mergeGroup.pull_requests[0].number;
             core.setOutput('pr_number', prNumber);
             
             // Get PR details
