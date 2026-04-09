@@ -1,21 +1,172 @@
-import os
 import csv
-import requests
-import zipfile
 import hashlib
+import os
+import tempfile
+import zipfile
 from datetime import datetime, timedelta
-from io import BytesIO
+from io import TextIOWrapper
+
+import requests
 from clickhouse_driver import Client as ClickhouseClient
-from dagster import asset, DailyPartitionsDefinition
+from dagster import DailyPartitionsDefinition, asset
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
+CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
 CLICKHOUSE_TABLE = os.environ.get("CLICKHOUSE_TABLE", "binance_daily_trades")
 
+DOWNLOAD_TIMEOUT = (30, 300)
+DOWNLOAD_CHUNK_SIZE = 1024 * 1024
+INSERT_BATCH_SIZE = 100_000
+
 daily_partitions = DailyPartitionsDefinition(start_date="2017-08-17")
+
+
+def _get_clickhouse_password():
+    if not CLICKHOUSE_PASSWORD:
+        raise RuntimeError(
+            "CLICKHOUSE_PASSWORD environment variable must be set before creating the ClickHouse client."
+        )
+
+    return CLICKHOUSE_PASSWORD
+
+
+def _build_requests_session() -> requests.Session:
+    session = requests.Session()
+    retries = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        backoff_factor=1,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "HEAD"]),
+    )
+    adapter = HTTPAdapter(max_retries=retries)
+    session.mount("https://", adapter)
+    session.mount("http://", adapter)
+    return session
+
+
+def _download_to_tempfile(session: requests.Session, url: str) -> tuple[str, int, str]:
+    downloaded_bytes = 0
+    zip_checksum = hashlib.sha256()
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".zip")
+
+    try:
+        with session.get(url, stream=True, timeout=DOWNLOAD_TIMEOUT) as response:
+            response.raise_for_status()
+            for chunk in response.iter_content(chunk_size=DOWNLOAD_CHUNK_SIZE):
+                if not chunk:
+                    continue
+
+                downloaded_bytes += len(chunk)
+                zip_checksum.update(chunk)
+                tmp_file.write(chunk)
+    except Exception:
+        tmp_file.close()
+        os.unlink(tmp_file.name)
+        raise
+
+    tmp_file.close()
+    return tmp_file.name, downloaded_bytes, zip_checksum.hexdigest()
+
+
+def _compute_csv_checksum(zip_path: str, csv_filename: str) -> str:
+    csv_checksum = hashlib.sha256()
+
+    with zipfile.ZipFile(zip_path) as zip_ref:
+        with zip_ref.open(csv_filename) as csv_file:
+            while chunk := csv_file.read(DOWNLOAD_CHUNK_SIZE):
+                csv_checksum.update(chunk)
+
+    return csv_checksum.hexdigest()
+
+
+def _normalize_datetime_seconds(timestamp: int) -> int:
+    timestamp_len = len(str(timestamp))
+    if timestamp_len == 13:
+        return timestamp // 1_000
+    if timestamp_len == 16:
+        return timestamp // 1_000_000
+
+    raise ValueError(f"Invalid timestamp length: {timestamp}")
+
+
+def _insert_batch(client: ClickhouseClient, batch: list[tuple]):
+    client.execute(
+        f"""
+        INSERT INTO {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
+        (
+            trade_id,
+            price,
+            quantity,
+            quote_quantity,
+            timestamp,
+            is_buyer_maker,
+            is_best_match,
+            datetime
+        ) SETTINGS async_insert=1, wait_for_async_insert=1
+        VALUES
+        """,
+        batch,
+        settings={"max_execution_time": 900},
+    )
+
+
+def _insert_csv_batches(
+    context,
+    client: ClickhouseClient,
+    zip_path: str,
+    csv_filename: str,
+) -> int:
+    row_count = 0
+    batch = []
+
+    with zipfile.ZipFile(zip_path) as zip_ref:
+        with zip_ref.open(csv_filename) as csv_file:
+            reader = csv.reader(TextIOWrapper(csv_file, encoding="utf-8", newline=""))
+
+            for row in reader:
+                row_count += 1
+
+                trade_id = int(row[0])
+                price = float(row[1])
+                quantity = float(row[2])
+                quote_quantity = float(row[3])
+                timestamp = int(row[4])
+                is_buyer_maker = row[5].lower() == "true"
+                is_best_match = row[6].lower() == "true"
+                datetime_seconds = _normalize_datetime_seconds(timestamp)
+
+                batch.append(
+                    (
+                        trade_id,
+                        price,
+                        quantity,
+                        quote_quantity,
+                        timestamp,
+                        is_buyer_maker,
+                        is_best_match,
+                        datetime_seconds,
+                    )
+                )
+
+                if len(batch) >= INSERT_BATCH_SIZE:
+                    _insert_batch(client, batch)
+                    context.log.info(
+                        f"Inserted batch of {len(batch)} rows for {CLICKHOUSE_TABLE}."
+                    )
+                    batch = []
+
+    if batch:
+        _insert_batch(client, batch)
+        context.log.info(f"Inserted final batch of {len(batch)} rows for {CLICKHOUSE_TABLE}.")
+
+    return row_count
 
 
 @asset(
@@ -45,87 +196,37 @@ def _process_day(context, day_str, date_str):
     file_url = base_url + day_str
     checksum_url = file_url + ".CHECKSUM"
 
-    context.log.info(f"Downloading checksum from {checksum_url}")
-    checksum_response = requests.get(checksum_url)
-    checksum_response.raise_for_status()
-
-    expected_checksum = checksum_response.text.split()[0].strip()
-    context.log.info(f"Expected checksum: {expected_checksum}")
-
-    context.log.info(f"Downloading trade data from {file_url}")
-    response = requests.get(file_url)
-    response.raise_for_status()
-    zip_data = response.content
-    context.log.info(f"Downloaded {len(zip_data) / 1024 / 1024:.2f} MB of data")
-
-    actual_checksum = hashlib.sha256(zip_data).hexdigest()
-    context.log.info(f"Actual checksum: {actual_checksum}")
-    if actual_checksum != expected_checksum:
-        context.log.error(
-            f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
-        )
-        raise ValueError(
-            f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
-        )
-
-    csv_content = None
-
-    context.log.info("Extracting CSV from zip file")
-    with zipfile.ZipFile(BytesIO(zip_data)) as zip_ref:
-        csv_filename = zip_ref.namelist()[0]
-        context.log.info(f"Found CSV file: {csv_filename}")
-
-        with zip_ref.open(csv_filename) as csv_file:
-            csv_content = csv_file.read()
-
-    csv_checksum = hashlib.sha256(csv_content).hexdigest()
-    context.log.info(f"CSV checksum: {csv_checksum}")
-
-    context.log.info("Parsing CSV data")
-    data = []
-
-    csv_text = csv_content.decode("utf-8")
-    reader = csv.reader(csv_text.splitlines())
-
-    row_count = 0
-    for row in reader:
-        row_count += 1
-        trade_id = int(row[0])
-        price = float(row[1])
-        quantity = float(row[2])
-        quote_quantity = float(row[3])
-        timestamp = int(row[4])
-        is_buyer_maker = row[5].lower() == "true"
-        is_best_match = row[6].lower() == "true"
-
-        if len(str(timestamp)) == 13:
-            dt = datetime.fromtimestamp(timestamp / 1000.0)
-        elif len(str(timestamp)) == 16:
-            dt = datetime.fromtimestamp(timestamp / 1000000.0)
-        else:
-            raise ValueError(f"Invalid timestamp length: {timestamp}")
-
-        data.append(
-            (
-                trade_id,
-                price,
-                quantity,
-                quote_quantity,
-                timestamp,
-                is_buyer_maker,
-                is_best_match,
-                dt,
-            )
-        )
-
-    context.log.info(f"Parsed {row_count} rows from CSV")
-
-    csv_text = None
-    csv_content = None
-    zip_data = None
-
+    session = _build_requests_session()
+    zip_path = None
     client = None
+
     try:
+        context.log.info(f"Downloading checksum from {checksum_url}")
+        checksum_response = session.get(checksum_url, timeout=DOWNLOAD_TIMEOUT)
+        checksum_response.raise_for_status()
+        expected_checksum = checksum_response.text.split()[0].strip()
+        context.log.info(f"Expected checksum: {expected_checksum}")
+
+        context.log.info(f"Downloading trade data from {file_url}")
+        zip_path, downloaded_bytes, actual_checksum = _download_to_tempfile(session, file_url)
+        context.log.info(f"Downloaded {downloaded_bytes / 1024 / 1024:.2f} MB of data")
+        context.log.info(f"Actual checksum: {actual_checksum}")
+
+        if actual_checksum != expected_checksum:
+            context.log.error(
+                f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
+            )
+            raise ValueError(
+                f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
+            )
+
+        with zipfile.ZipFile(zip_path) as zip_ref:
+            csv_filename = zip_ref.namelist()[0]
+            context.log.info(f"Found CSV file: {csv_filename}")
+
+        csv_checksum = _compute_csv_checksum(zip_path, csv_filename)
+        context.log.info(f"CSV checksum: {csv_checksum}")
+
         context.log.info(
             f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}"
         )
@@ -133,7 +234,7 @@ def _process_day(context, day_str, date_str):
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD,
+            password=_get_clickhouse_password(),
             database=CLICKHOUSE_DATABASE,
             compression=True,
             send_receive_timeout=900,
@@ -161,26 +262,9 @@ def _process_day(context, day_str, date_str):
             )
             context.log.info(f"Deleted existing data for {date_str}")
 
-        context.log.info(f"Inserting {len(data)} rows into ClickHouse")
-        client.execute(
-            f"""
-            INSERT INTO {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
-            (
-                trade_id,
-                price,
-                quantity,
-                quote_quantity,
-                timestamp,
-                is_buyer_maker,
-                is_best_match,
-                datetime
-            ) SETTINGS async_insert=1, wait_for_async_insert=1
-            VALUES
-            """,
-            data,
-            settings={"max_execution_time": 900},
-        )
-        context.log.info("Data insertion completed")
+        context.log.info("Parsing CSV data and inserting batches into ClickHouse")
+        row_count = _insert_csv_batches(context, client, zip_path, csv_filename)
+        context.log.info(f"Parsed and inserted {row_count} rows from CSV")
 
         context.log.info("Verifying data insertion")
         result = client.execute(
@@ -214,12 +298,12 @@ def _process_day(context, day_str, date_str):
         }
         context.log.info(f"Data verification stats: {data_verification}")
 
-        if inserted_count != len(data):
+        if inserted_count != row_count:
             context.log.error(
-                f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}"
+                f"Row count mismatch! Expected: {row_count}, Actual: {inserted_count}"
             )
             raise ValueError(
-                f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}"
+                f"Row count mismatch! Expected: {row_count}, Actual: {inserted_count}"
             )
 
         result_data = {
@@ -233,12 +317,14 @@ def _process_day(context, day_str, date_str):
         context.log.info(f"Successfully processed {day_str}")
         return result_data
 
-    except Exception as e:
-        raise e
+    except Exception:
+        raise
     finally:
+        session.close()
         if client:
             try:
                 client.disconnect()
             except Exception:
                 pass
-        data = None
+        if zip_path and os.path.exists(zip_path):
+            os.unlink(zip_path)

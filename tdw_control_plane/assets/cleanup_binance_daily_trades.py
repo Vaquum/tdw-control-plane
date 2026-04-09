@@ -10,8 +10,17 @@ from tdw_control_plane.assets.monthly_trades_to_tdw import (
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
+CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
+
+
+def _get_clickhouse_password():
+    if not CLICKHOUSE_PASSWORD:
+        raise RuntimeError(
+            "CLICKHOUSE_PASSWORD environment variable must be set before creating the ClickHouse client."
+        )
+
+    return CLICKHOUSE_PASSWORD
 
 
 @asset(
@@ -32,7 +41,7 @@ def cleanup_binance_daily_trades_for_finalized_month(context: AssetExecutionCont
             host=CLICKHOUSE_HOST,
             port=CLICKHOUSE_PORT,
             user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD,
+            password=_get_clickhouse_password(),
             database=CLICKHOUSE_DATABASE,
             compression=True,
             send_receive_timeout=900,
@@ -93,8 +102,8 @@ def cleanup_binance_daily_trades_for_finalized_month(context: AssetExecutionCont
             "status": "cleanup_queued",
         }
 
-    except Exception as e:
-        raise e
+    except Exception:
+        raise
     finally:
         if client:
             try:

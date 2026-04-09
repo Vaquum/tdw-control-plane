@@ -16,6 +16,7 @@ from dagster import (
     Definitions,
     RunRequest,
     ScheduleEvaluationContext,
+    SkipReason,
     define_asset_job,
     schedule,
 )
@@ -51,7 +52,7 @@ from .assets.create_binance_trades_table_origo import create_binance_trades_tabl
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
+CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
 MAX_DAILY_BACKFILL_RUNS_PER_TICK = 31
 
@@ -165,9 +166,18 @@ def _get_clickhouse_client():
         host=CLICKHOUSE_HOST,
         port=CLICKHOUSE_PORT,
         user=CLICKHOUSE_USER,
-        password=CLICKHOUSE_PASSWORD,
+        password=_get_clickhouse_password(),
         database=CLICKHOUSE_DATABASE,
     )
+
+
+def _get_clickhouse_password():
+    if not CLICKHOUSE_PASSWORD:
+        raise RuntimeError(
+            "CLICKHOUSE_PASSWORD environment variable must be set before using ClickHouse-dependent schedules."
+        )
+
+    return CLICKHOUSE_PASSWORD
 
 
 def _table_exists(table_name: str) -> bool:
@@ -189,9 +199,6 @@ def _table_exists(table_name: str) -> bool:
 
 
 def _count_rows_for_day(table_name: str, date_str: str) -> int:
-    if not _table_exists(table_name):
-        return 0
-
     client = None
     try:
         client = _get_clickhouse_client()
@@ -209,9 +216,6 @@ def _count_rows_for_day(table_name: str, date_str: str) -> int:
 
 
 def _count_rows_for_month(table_name: str, month_start: str) -> int:
-    if not _table_exists(table_name):
-        return 0
-
     client = None
     try:
         client = _get_clickhouse_client()
@@ -230,9 +234,6 @@ def _count_rows_for_month(table_name: str, month_start: str) -> int:
 
 
 def _latest_day_in_table(table_name: str):
-    if not _table_exists(table_name):
-        return None
-
     client = None
     try:
         client = _get_clickhouse_client()
@@ -249,9 +250,6 @@ def _latest_day_in_table(table_name: str):
 
 
 def _existing_days_in_range(table_name: str, start_date: str, end_date: str) -> set:
-    if not _table_exists(table_name):
-        return set()
-
     client = None
     try:
         client = _get_clickhouse_client()
@@ -309,11 +307,14 @@ def daily_tdw_pipeline_schedule(context: ScheduleEvaluationContext):
     end_date = (scheduled_time - timedelta(days=1)).date()
 
     if not _table_exists("binance_daily_trades"):
-        return None
+        return SkipReason("tdw.binance_daily_trades does not exist yet.")
+
+    if not _table_exists("binance_trades"):
+        return SkipReason("tdw.binance_trades does not exist yet.")
 
     start_day = _next_daily_overlay_start_day()
     if start_day is None or start_day > end_date:
-        return None
+        return SkipReason("No missing daily overlay partitions need to be materialized.")
 
     existing_days = _existing_days_in_range(
         "binance_daily_trades",
@@ -340,7 +341,7 @@ def daily_tdw_pipeline_schedule(context: ScheduleEvaluationContext):
         current_day += timedelta(days=1)
 
     if not run_requests:
-        return None
+        return SkipReason("No available Binance daily archives were found for missing overlay days.")
 
     return run_requests
 
@@ -358,17 +359,17 @@ def monthly_tdw_rollforward_schedule(context: ScheduleEvaluationContext):
     previous_month_label = previous_month_date.strftime("%Y-%m")
 
     if not _table_exists("binance_trades"):
-        return None
+        return SkipReason("tdw.binance_trades does not exist yet.")
 
     if _count_rows_for_month("binance_trades", previous_month_start) > 0:
-        return None
+        return SkipReason(f"Monthly Binance trades for {previous_month_start} are already loaded.")
 
     file_url = (
         "https://data.binance.vision/data/spot/monthly/trades/BTCUSDT/"
         f"BTCUSDT-trades-{previous_month_label}.zip"
     )
     if not _binance_archive_available(file_url):
-        return None
+        return SkipReason(f"Monthly Binance archive {previous_month_label} is not available yet.")
 
     return RunRequest(
         partition_key=previous_month_start,
