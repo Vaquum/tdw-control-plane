@@ -2,6 +2,13 @@ import os
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import asset, AssetExecutionContext
 
+from tdw_control_plane.assets.create_binance_daily_trades_table import (
+    create_binance_daily_trades_table,
+)
+from tdw_control_plane.assets.create_binance_trades_table import (
+    create_binance_trades_table,
+)
+
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
@@ -20,6 +27,7 @@ def _get_clickhouse_password():
 
 @asset(
     group_name="tdw_setup",
+    deps=[create_binance_daily_trades_table, create_binance_trades_table],
     description="Creates a view that combines final monthly Binance trades with open-period daily trades",
 )
 def create_binance_trades_complete_view(context: AssetExecutionContext):
@@ -96,7 +104,7 @@ def create_binance_trades_complete_view(context: AssetExecutionContext):
                     SELECT toStartOfMonth(max(datetime))
                     FROM {CLICKHOUSE_DATABASE}.binance_trades
                 ),
-                toDateTime('1969-12-01 00:00:00')
+                toDateTime('1970-01-01 00:00:00')
             )
         """
         )

@@ -54,7 +54,8 @@ CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
-MAX_DAILY_BACKFILL_RUNS_PER_TICK = 31
+MAX_DAILY_BACKFILL_RUNS_PER_TICK = 14
+MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS = 14
 
 
 # Database Maintenance Jobs
@@ -315,6 +316,12 @@ def daily_tdw_pipeline_schedule(context: ScheduleEvaluationContext):
     start_day = _next_daily_overlay_start_day()
     if start_day is None or start_day > end_date:
         return SkipReason("No missing daily overlay partitions need to be materialized.")
+
+    backfill_gap_days = (end_date - start_day).days + 1
+    if backfill_gap_days > MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS:
+        return SkipReason(
+            "Daily overlay gap is larger than the automated backfill threshold; trigger a manual backfill."
+        )
 
     existing_days = _existing_days_in_range(
         "binance_daily_trades",
