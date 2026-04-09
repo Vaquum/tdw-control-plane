@@ -53,6 +53,7 @@ CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
 CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
+MAX_DAILY_BACKFILL_RUNS_PER_TICK = 31
 
 
 # Database Maintenance Jobs
@@ -228,6 +229,54 @@ def _count_rows_for_month(table_name: str, month_start: str) -> int:
             client.disconnect()
 
 
+def _latest_day_in_table(table_name: str):
+    if not _table_exists(table_name):
+        return None
+
+    client = None
+    try:
+        client = _get_clickhouse_client()
+        result = client.execute(
+            f"""
+            SELECT max(toDate(datetime))
+            FROM {CLICKHOUSE_DATABASE}.{table_name}
+        """
+        )
+        return result[0][0]
+    finally:
+        if client:
+            client.disconnect()
+
+
+def _existing_days_in_range(table_name: str, start_date: str, end_date: str) -> set:
+    if not _table_exists(table_name):
+        return set()
+
+    client = None
+    try:
+        client = _get_clickhouse_client()
+        result = client.execute(
+            f"""
+            SELECT DISTINCT toDate(datetime) AS day
+            FROM {CLICKHOUSE_DATABASE}.{table_name}
+            WHERE toDate(datetime) >= toDate('{start_date}')
+              AND toDate(datetime) <= toDate('{end_date}')
+        """
+        )
+        return {row[0] for row in result if row[0] is not None}
+    finally:
+        if client:
+            client.disconnect()
+
+
+def _next_daily_overlay_start_day():
+    latest_monthly_day = _latest_day_in_table("binance_trades")
+    if latest_monthly_day is None:
+        return None
+
+    return latest_monthly_day + timedelta(days=1)
+
+
 def _binance_archive_available(file_url: str) -> bool:
     checksum_url = f"{file_url}.CHECKSUM"
     try:
@@ -257,22 +306,43 @@ def daily_pipeline_schedule():
 )
 def daily_tdw_pipeline_schedule(context: ScheduleEvaluationContext):
     scheduled_time = _scheduled_time(context)
-    target_date = (scheduled_time - timedelta(days=1)).date().isoformat()
+    end_date = (scheduled_time - timedelta(days=1)).date()
 
     if not _table_exists("binance_daily_trades"):
         return None
 
-    if _count_rows_for_day("binance_daily_trades", target_date) > 0:
+    start_day = _next_daily_overlay_start_day()
+    if start_day is None or start_day > end_date:
         return None
 
-    file_url = (
-        "https://data.binance.vision/data/spot/daily/trades/BTCUSDT/"
-        f"BTCUSDT-trades-{target_date}.zip"
+    existing_days = _existing_days_in_range(
+        "binance_daily_trades",
+        start_day.isoformat(),
+        end_date.isoformat(),
     )
-    if not _binance_archive_available(file_url):
+
+    run_requests = []
+    current_day = start_day
+    while current_day <= end_date and len(run_requests) < MAX_DAILY_BACKFILL_RUNS_PER_TICK:
+        if current_day not in existing_days:
+            target_date = current_day.isoformat()
+            file_url = (
+                "https://data.binance.vision/data/spot/daily/trades/BTCUSDT/"
+                f"BTCUSDT-trades-{target_date}.zip"
+            )
+            if _binance_archive_available(file_url):
+                run_requests.append(
+                    RunRequest(
+                        partition_key=target_date,
+                        run_key=f"binance_daily_trades::{target_date}",
+                    )
+                )
+        current_day += timedelta(days=1)
+
+    if not run_requests:
         return None
 
-    return RunRequest(partition_key=target_date)
+    return run_requests
 
 
 @schedule(
@@ -300,7 +370,10 @@ def monthly_tdw_rollforward_schedule(context: ScheduleEvaluationContext):
     if not _binance_archive_available(file_url):
         return None
 
-    return RunRequest(partition_key=previous_month_start)
+    return RunRequest(
+        partition_key=previous_month_start,
+        run_key=f"binance_trades::{previous_month_start}",
+    )
 
 defs = Definitions(
     assets=[create_tdw_database,
