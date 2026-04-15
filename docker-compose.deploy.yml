@@ -6,6 +6,7 @@ services:
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - HF_TOKEN=${HF_TOKEN}
       - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID}
     volumes:
@@ -18,6 +19,7 @@ services:
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
       - HF_TOKEN=${HF_TOKEN}
       - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID}
     volumes:
