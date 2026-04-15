@@ -1,0 +1,3 @@
+FROM clickhouse/clickhouse-server:25.3.2.39@sha256:8745843b17f92db1765025009772ec1d87dfdcaa95deabca6b802a66cb669d30
+
+COPY clickhouse-config.xml /etc/clickhouse-server/config.d/clickhouse-config.xml
