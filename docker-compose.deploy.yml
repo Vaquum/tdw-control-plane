@@ -53,4 +53,8 @@ services:
 
 volumes:
   clickhouse-data:
+    name: tdw-control-plane_clickhouse-data
+    external: true
   dagster-instance:
+    name: tdw-control-plane_dagster-instance
+    external: true
