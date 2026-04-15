@@ -19,11 +19,12 @@ jobs:
     name: Build Images And Deploy
     runs-on: ubuntu-latest
     env:
-      TDW_HOST: 37.27.112.167
-      TDW_USER: root
-      DEPLOY_DIR: /opt/tdw-control-plane
-      PROJECT_NAME: tdw-control-plane
-      HUGGINGFACE_DATASET_REPO_ID: vaquum/binance_btcusdt_1m_klines
+      TDW_HOST: ${{ vars.TDW_HOST != '' && vars.TDW_HOST || '37.27.112.167' }}
+      TDW_USER: ${{ vars.TDW_USER != '' && vars.TDW_USER || 'root' }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR != '' && vars.DEPLOY_DIR || '/opt/tdw-control-plane' }}
+      PROJECT_NAME: ${{ vars.TDW_PROJECT_NAME != '' && vars.TDW_PROJECT_NAME || 'tdw-control-plane' }}
+      HUGGINGFACE_DATASET_REPO_ID: ${{ vars.HUGGINGFACE_DATASET_REPO_ID != '' && vars.HUGGINGFACE_DATASET_REPO_ID || 'vaquum/binance_btcusdt_1m_klines' }}
+      TDW_KNOWN_HOSTS: ${{ vars.TDW_KNOWN_HOSTS != '' && vars.TDW_KNOWN_HOSTS || '37.27.112.167 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIv/0Zuyg5mIwqOIkD/1K7EOUg+XWNTKT2g7PwDQeOzG' }}
 
     steps:
       - name: Checkout repository
@@ -73,17 +74,19 @@ jobs:
           CLICKHOUSE_PASSWORD: test-password
           HF_TOKEN: test-token
           HUGGINGFACE_DATASET_REPO_ID: ${{ env.HUGGINGFACE_DATASET_REPO_ID }}
-        run: docker compose -f docker-compose.deploy.yml config > /tmp/docker-compose.deploy.rendered.yml
+        run: docker compose -f docker-compose.deploy.yml config > /dev/null
 
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.TDW_PRIVATE_KEY }}
 
-      - name: Trust deployment host
+      - name: Configure pinned deployment host key
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -H "$TDW_HOST" >> ~/.ssh/known_hosts
+          chmod 700 ~/.ssh
+          printf '%s\n' "$TDW_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Upload deploy compose file
         run: |
@@ -97,30 +100,61 @@ jobs:
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          GHCR_TOKEN_B64=$(printf '%s' "$GHCR_TOKEN" | base64 -w0)
-          CLICKHOUSE_PASSWORD_B64=$(printf '%s' "$CLICKHOUSE_PASSWORD" | base64 -w0)
-          HF_TOKEN_B64=$(printf '%s' "$HF_TOKEN" | base64 -w0)
+          DEPLOY_ENV_FILE="/tmp/tdw-deploy.env"
+          trap 'rm -f "$DEPLOY_ENV_FILE"' EXIT
+
+          python3 - <<'PY' > "$DEPLOY_ENV_FILE"
+          import os
+          import shlex
+
+          values = {
+              "GHCR_USERNAME": os.environ["GHCR_USERNAME"],
+              "GHCR_TOKEN": os.environ["GHCR_TOKEN"],
+              "APP_IMAGE": os.environ["APP_IMAGE"],
+              "CLICKHOUSE_IMAGE": os.environ["CLICKHOUSE_IMAGE"],
+              "CLICKHOUSE_PASSWORD": os.environ["CLICKHOUSE_PASSWORD"],
+              "HF_TOKEN": os.environ["HF_TOKEN"],
+              "HUGGINGFACE_DATASET_REPO_ID": os.environ["HUGGINGFACE_DATASET_REPO_ID"],
+              "PROJECT_NAME": os.environ["PROJECT_NAME"],
+          }
+
+          for key, value in values.items():
+              print(f"{key}={shlex.quote(value)}")
+          PY
+
+          scp "$DEPLOY_ENV_FILE" "$TDW_USER@$TDW_HOST:$DEPLOY_DIR/.deploy.env"
 
           ssh "$TDW_USER@$TDW_HOST" \
-            "APP_IMAGE='$APP_IMAGE' CLICKHOUSE_IMAGE='$CLICKHOUSE_IMAGE' DEPLOY_DIR='$DEPLOY_DIR' PROJECT_NAME='$PROJECT_NAME' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN_B64='$GHCR_TOKEN_B64' CLICKHOUSE_PASSWORD_B64='$CLICKHOUSE_PASSWORD_B64' HF_TOKEN_B64='$HF_TOKEN_B64' HUGGINGFACE_DATASET_REPO_ID='$HUGGINGFACE_DATASET_REPO_ID' bash -s" <<'REMOTE'
+            "DEPLOY_DIR='$DEPLOY_DIR' TDW_HOST='$TDW_HOST' bash -s" <<'REMOTE'
           set -euo pipefail
 
           export DOCKER_CONFIG
           DOCKER_CONFIG="$(mktemp -d)"
+          SECRETS_FILE="$DEPLOY_DIR/.deploy.env"
           cleanup() {
             rm -rf "$DOCKER_CONFIG"
+            rm -f "$SECRETS_FILE"
           }
           trap cleanup EXIT
+          chmod 600 "$SECRETS_FILE"
 
-          GHCR_TOKEN="$(printf '%s' "$GHCR_TOKEN_B64" | base64 -d)"
-          CLICKHOUSE_PASSWORD="$(printf '%s' "$CLICKHOUSE_PASSWORD_B64" | base64 -d)"
-          HF_TOKEN="$(printf '%s' "$HF_TOKEN_B64" | base64 -d)"
-          export APP_IMAGE CLICKHOUSE_IMAGE CLICKHOUSE_PASSWORD HF_TOKEN HUGGINGFACE_DATASET_REPO_ID
+          set -a
+          . "$SECRETS_FILE"
+          set +a
 
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
           cd "$DEPLOY_DIR"
-          docker-compose -p "$PROJECT_NAME" -f docker-compose.deploy.yml pull
-          docker-compose -p "$PROJECT_NAME" -f docker-compose.deploy.yml up -d clickhouse dagster dagit
-          docker image prune -f
+          docker compose --env-file "$SECRETS_FILE" -p "$PROJECT_NAME" -f docker-compose.deploy.yml pull
+          docker compose --env-file "$SECRETS_FILE" -p "$PROJECT_NAME" -f docker-compose.deploy.yml up -d --wait clickhouse dagster dagit
+          docker compose --env-file "$SECRETS_FILE" -p "$PROJECT_NAME" -f docker-compose.deploy.yml exec -T dagster python - <<'PY'
+          from tdw_control_plane.utils.get_clickhouse_client import get_clickhouse_client
+
+          rows = get_clickhouse_client().query("SELECT 1").result_rows
+          if rows != [(1,)]:
+              raise SystemExit(f"Unexpected ClickHouse smoke-test result: {rows}")
+          print(rows)
+          PY
           REMOTE
+
+          rm -f "$DEPLOY_ENV_FILE"

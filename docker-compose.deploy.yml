@@ -1,14 +1,14 @@
 services:
   clickhouse:
-    image: ${CLICKHOUSE_IMAGE}
+    image: ${CLICKHOUSE_IMAGE:?CLICKHOUSE_IMAGE is required}
     ports:
-      - "8123:8123"
-      - "9000:9000"
+      - "127.0.0.1:8123:8123"
+      - "127.0.0.1:9000:9000"
     volumes:
       - clickhouse-data:/var/lib/clickhouse
     environment:
       - CLICKHOUSE_USER=default
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD is required}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8123/ping"]
       interval: 5s
@@ -18,15 +18,15 @@ services:
     restart: unless-stopped
 
   dagit:
-    image: ${APP_IMAGE}
+    image: ${APP_IMAGE:?APP_IMAGE is required}
     ports:
       - "4000:3000"
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - HF_TOKEN=${HF_TOKEN}
-      - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD is required}
+      - HF_TOKEN=${HF_TOKEN:?HF_TOKEN is required}
+      - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID:?HUGGINGFACE_DATASET_REPO_ID is required}
     volumes:
       - dagster-instance:/opt/dagster-instance
     depends_on:
@@ -36,13 +36,13 @@ services:
     restart: unless-stopped
 
   dagster:
-    image: ${APP_IMAGE}
+    image: ${APP_IMAGE:?APP_IMAGE is required}
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
-      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
-      - HF_TOKEN=${HF_TOKEN}
-      - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD:?CLICKHOUSE_PASSWORD is required}
+      - HF_TOKEN=${HF_TOKEN:?HF_TOKEN is required}
+      - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID:?HUGGINGFACE_DATASET_REPO_ID is required}
     volumes:
       - dagster-instance:/opt/dagster-instance
     depends_on:
