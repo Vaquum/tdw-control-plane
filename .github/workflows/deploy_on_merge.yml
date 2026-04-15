@@ -19,16 +19,25 @@ jobs:
     name: Build Images And Deploy
     runs-on: ubuntu-latest
     env:
-      TDW_HOST: ${{ vars.TDW_HOST != '' && vars.TDW_HOST || '37.27.112.167' }}
-      TDW_USER: ${{ vars.TDW_USER != '' && vars.TDW_USER || 'root' }}
-      DEPLOY_DIR: ${{ vars.DEPLOY_DIR != '' && vars.DEPLOY_DIR || '/opt/tdw-control-plane' }}
-      PROJECT_NAME: ${{ vars.TDW_PROJECT_NAME != '' && vars.TDW_PROJECT_NAME || 'tdw-control-plane' }}
-      HUGGINGFACE_DATASET_REPO_ID: ${{ vars.HUGGINGFACE_DATASET_REPO_ID != '' && vars.HUGGINGFACE_DATASET_REPO_ID || 'vaquum/binance_btcusdt_1m_klines' }}
-      TDW_KNOWN_HOSTS: ${{ vars.TDW_KNOWN_HOSTS != '' && vars.TDW_KNOWN_HOSTS || '37.27.112.167 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIv/0Zuyg5mIwqOIkD/1K7EOUg+XWNTKT2g7PwDQeOzG' }}
+      TDW_HOST: ${{ vars.TDW_HOST }}
+      TDW_USER: ${{ vars.TDW_USER }}
+      DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
+      PROJECT_NAME: ${{ vars.TDW_PROJECT_NAME }}
+      HUGGINGFACE_DATASET_REPO_ID: ${{ vars.HUGGINGFACE_DATASET_REPO_ID }}
+      TDW_KNOWN_HOSTS: ${{ vars.TDW_KNOWN_HOSTS }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate deploy configuration
+        run: |
+          test -n "$TDW_HOST"
+          test -n "$TDW_USER"
+          test -n "$DEPLOY_DIR"
+          test -n "$PROJECT_NAME"
+          test -n "$HUGGINGFACE_DATASET_REPO_ID"
+          test -n "$TDW_KNOWN_HOSTS"
 
       - name: Set image names
         run: |
