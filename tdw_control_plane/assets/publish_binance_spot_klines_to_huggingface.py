@@ -118,7 +118,8 @@ def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
         start_date_limit=EXPORT_START_DATE,
         end_date_limit=export_end_exclusive,
         table_name="binance_trades_complete",
-    ).drop(["median", "iqr"])
+        include_quantiles=False,
+    )
 
     if data.height == 0:
         raise RuntimeError(
@@ -166,6 +167,7 @@ def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
             repo_id=dataset_repo_id,
             repo_type="dataset",
             commit_message=commit_message,
+            delete_patterns=[f"{EXPORT_FILENAME_PREFIX}*.parquet"],
         )
 
     latest_datetime = data["datetime"].max()

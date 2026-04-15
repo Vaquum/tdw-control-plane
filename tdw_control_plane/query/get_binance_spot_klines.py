@@ -1,3 +1,4 @@
+from datetime import datetime
 import logging
 import re
 import time
@@ -7,6 +8,40 @@ import polars as pl
 from tdw_control_plane.utils.get_clickhouse_client import get_clickhouse_client
 
 logger = logging.getLogger(__name__)
+_SUPPORTED_DATETIME_FORMATS = (
+    "%Y-%m-%d",
+    "%Y-%m-%d %H:%M:%S",
+    "%Y-%m-%dT%H:%M:%S",
+)
+
+
+def _validate_positive_int(value: int | None, field_name: str) -> int | None:
+    if value is None:
+        return None
+
+    if type(value) is not int:
+        raise TypeError(f"{field_name} must be an int.")
+
+    if value < 1:
+        raise ValueError(f"{field_name} must be at least 1.")
+
+    return value
+
+
+def _normalize_datetime_literal(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+
+    for fmt in _SUPPORTED_DATETIME_FORMATS:
+        try:
+            parsed = datetime.strptime(value, fmt)
+            return parsed.strftime("%Y-%m-%d %H:%M:%S")
+        except ValueError:
+            continue
+
+    raise ValueError(
+        f"{field_name} must match one of: YYYY-MM-DD, YYYY-MM-DD HH:MM:SS, YYYY-MM-DDTHH:MM:SS."
+    )
 
 
 def get_binance_spot_klines(
@@ -16,43 +51,74 @@ def get_binance_spot_klines(
     end_date_limit: str | None = None,
     show_summary: bool = False,
     table_name: str = "binance_trades_complete",
+    include_quantiles: bool = True,
 ) -> pl.DataFrame:
     """Query Binance BTCUSDT spot klines from TDW.
 
     This is TDW's canonical spot-kline query and mirrors the existing
     HistoricalData.get_spot_klines semantics while sourcing data from
     tdw.binance_trades_complete by default.
+
+    Args:
+        n_rows: Optional maximum number of rows to return.
+        kline_size: Bucket width in seconds used for kline aggregation.
+            For example, ``60`` means 1-minute klines.
+        start_date_limit: Optional inclusive lower datetime bound. Accepts
+            `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`, or `YYYY-MM-DDTHH:MM:SS`.
+        end_date_limit: Optional exclusive upper datetime bound. Accepts
+            `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`, or `YYYY-MM-DDTHH:MM:SS`.
+        show_summary: Whether to log query timing and dataframe size details.
+        table_name: ClickHouse source table name.
+        include_quantiles: Whether to include `median` and `iqr` columns.
     """
 
     if re.fullmatch(r"[A-Za-z0-9_]+", table_name) is None:
         raise ValueError(f"Invalid ClickHouse table name: {table_name}")
 
+    n_rows = _validate_positive_int(n_rows, "n_rows")
+    kline_size = _validate_positive_int(kline_size, "kline_size")
+    start_date_limit = _normalize_datetime_literal(start_date_limit, "start_date_limit")
+    end_date_limit = _normalize_datetime_literal(end_date_limit, "end_date_limit")
+
     client = get_clickhouse_client()
     try:
-        limit = f"LIMIT {n_rows}" if n_rows is not None else ""
+        query_parameters: dict[str, int | str] = {
+            "bucket_seconds": kline_size,
+        }
+        limit = "LIMIT {limit_rows:UInt64}" if n_rows is not None else ""
+        if n_rows is not None:
+            query_parameters["limit_rows"] = n_rows
 
         where_clauses = []
         if start_date_limit is not None:
-            where_clauses.append(f"datetime >= toDateTime('{start_date_limit}')")
+            where_clauses.append("datetime >= toDateTime({start_dt:String})")
+            query_parameters["start_dt"] = start_date_limit
         if end_date_limit is not None:
-            where_clauses.append(f"datetime < toDateTime('{end_date_limit}')")
+            where_clauses.append("datetime < toDateTime({end_dt:String})")
+            query_parameters["end_dt"] = end_date_limit
 
         if where_clauses:
             where_sql = "WHERE " + " AND ".join(where_clauses) + " "
         else:
             where_sql = ""
 
+        quantile_sql = ""
+        if include_quantiles:
+            quantile_sql = (
+                "    quantileExact(0.5)(price)     AS median, "
+                "    quantileExact(0.75)(price) - quantileExact(0.25)(price) AS iqr, "
+            )
+
         query = (
             f"SELECT "
-            f"    toDateTime({kline_size} * intDiv(toUnixTimestamp(datetime), {kline_size})) AS datetime, "
+            f"    toDateTime({{bucket_seconds:UInt32}} * intDiv(toUnixTimestamp(datetime), {{bucket_seconds:UInt32}})) AS datetime, "
             f"    argMin(price, trade_id)       AS open, "
             f"    max(price)                    AS high, "
             f"    min(price)                    AS low, "
             f"    argMax(price, trade_id)       AS close, "
             f"    avg(price)                    AS mean, "
             f"    stddevPopStable(price)        AS std, "
-            f"    quantileExact(0.5)(price)     AS median, "
-            f"    quantileExact(0.75)(price) - quantileExact(0.25)(price) AS iqr, "
+            f"{quantile_sql}"
             f"    sumKahan(quantity)            AS volume, "
             f"    avg(is_buyer_maker)           AS maker_ratio, "
             f"    count()                       AS no_of_trades, "
@@ -71,7 +137,7 @@ def get_binance_spot_klines(
         )
 
         start = time.time()
-        arrow_table = client.query_arrow(query)
+        arrow_table = client.query_arrow(query, parameters=query_parameters)
         polars_df = pl.from_arrow(arrow_table)
 
         polars_df = polars_df.with_columns([
