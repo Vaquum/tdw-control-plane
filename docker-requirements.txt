@@ -4,5 +4,6 @@ clickhouse-driver
 clickhouse-cityhash
 clickhouse_connect
 polars
+huggingface_hub
 requests
 aiohttp

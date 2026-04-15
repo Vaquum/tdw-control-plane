@@ -13,10 +13,12 @@ from datetime import datetime, timedelta, timezone
 import requests
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import (
+    AssetKey,
     Definitions,
     RunRequest,
     ScheduleEvaluationContext,
     SkipReason,
+    asset_sensor,
     define_asset_job,
     schedule,
 )
@@ -26,6 +28,9 @@ from .assets.cleanup_binance_daily_trades import (
 )
 from .assets.daily_trades_to_origo import insert_daily_binance_trades_to_origo
 from .assets.daily_trades_to_tdw import insert_daily_binance_trades_to_tdw
+from .assets.publish_binance_spot_klines_to_huggingface import (
+    publish_binance_spot_klines_to_huggingface,
+)
 from .assets.monthly_trades_to_tdw import insert_monthly_binance_trades_to_tdw
 from .assets.create_tdw_database import create_tdw_database
 from .assets.create_binance_daily_trades_table import create_binance_daily_trades_table
@@ -111,6 +116,10 @@ insert_daily_binance_trades_job = define_asset_job(
 insert_daily_binance_trades_tdw_job = define_asset_job(
     name="insert_daily_trades_to_tdw_job",
     selection=["insert_daily_binance_trades_to_tdw"])
+
+publish_binance_spot_klines_to_huggingface_job = define_asset_job(
+    name="publish_binance_spot_klines_to_huggingface_job",
+    selection=["publish_binance_spot_klines_to_huggingface"])
 
 insert_monthly_binance_agg_trades_job = define_asset_job(
     name="insert_monthly_agg_trades_to_tdw_job",
@@ -383,6 +392,25 @@ def monthly_tdw_rollforward_schedule(context: ScheduleEvaluationContext):
         run_key=f"binance_trades::{previous_month_start}",
     )
 
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_trades_to_tdw"),
+    job=publish_binance_spot_klines_to_huggingface_job,
+)
+def publish_binance_spot_klines_to_huggingface_sensor(context, asset_event):
+    if not asset_event.dagster_event:
+        return SkipReason("No Dagster event was attached to the daily TDW materialization.")
+
+    partition_key = asset_event.dagster_event.partition
+    if partition_key is None:
+        return SkipReason("Daily TDW materialization did not include a partition key.")
+
+    return RunRequest(
+        partition_key=partition_key,
+        run_key=f"publish_binance_spot_klines_to_hf::{partition_key}",
+    )
+
+
 defs = Definitions(
     assets=[create_tdw_database,
             create_origo_database,
@@ -393,6 +421,7 @@ defs = Definitions(
             insert_monthly_binance_trades_to_tdw,
             insert_daily_binance_trades_to_origo,
             insert_daily_binance_trades_to_tdw,
+            publish_binance_spot_klines_to_huggingface,
             cleanup_binance_daily_trades_for_finalized_month,
             create_binance_trades_monthly_summary,
             create_binance_trades_daily_summary,
@@ -413,6 +442,10 @@ defs = Definitions(
         daily_tdw_pipeline_schedule,
         monthly_tdw_rollforward_schedule,
     ],
+
+    sensors=[
+        publish_binance_spot_klines_to_huggingface_sensor,
+    ],
     
     jobs=[create_tdw_database_job,
           create_origo_database_job,
@@ -423,6 +456,7 @@ defs = Definitions(
           insert_monthly_binance_trades_job,
           insert_daily_binance_trades_job,
           insert_daily_binance_trades_tdw_job,
+          publish_binance_spot_klines_to_huggingface_job,
           roll_forward_monthly_binance_trades_job,
           create_binance_trades_monthly_summary_job,
           create_binance_trades_daily_summary_job,
