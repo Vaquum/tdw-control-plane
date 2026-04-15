@@ -33,6 +33,8 @@ jobs:
         run: |
           echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-dagster:${GITHUB_SHA}" >> "$GITHUB_ENV"
           echo "APP_IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-dagster:latest" >> "$GITHUB_ENV"
+          echo "CLICKHOUSE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-clickhouse:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "CLICKHOUSE_IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-clickhouse:latest" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -54,9 +56,20 @@ jobs:
             ${{ env.APP_IMAGE }}
             ${{ env.APP_IMAGE_LATEST }}
 
+      - name: Build and push ClickHouse image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.clickhouse
+          push: true
+          tags: |
+            ${{ env.CLICKHOUSE_IMAGE }}
+            ${{ env.CLICKHOUSE_IMAGE_LATEST }}
+
       - name: Validate deploy compose file
         env:
           APP_IMAGE: ${{ env.APP_IMAGE }}
+          CLICKHOUSE_IMAGE: ${{ env.CLICKHOUSE_IMAGE }}
           CLICKHOUSE_PASSWORD: test-password
           HF_TOKEN: test-token
           HUGGINGFACE_DATASET_REPO_ID: ${{ env.HUGGINGFACE_DATASET_REPO_ID }}
@@ -89,7 +102,7 @@ jobs:
           HF_TOKEN_B64=$(printf '%s' "$HF_TOKEN" | base64 -w0)
 
           ssh "$TDW_USER@$TDW_HOST" \
-            "APP_IMAGE='$APP_IMAGE' DEPLOY_DIR='$DEPLOY_DIR' PROJECT_NAME='$PROJECT_NAME' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN_B64='$GHCR_TOKEN_B64' CLICKHOUSE_PASSWORD_B64='$CLICKHOUSE_PASSWORD_B64' HF_TOKEN_B64='$HF_TOKEN_B64' HUGGINGFACE_DATASET_REPO_ID='$HUGGINGFACE_DATASET_REPO_ID' bash -s" <<'REMOTE'
+            "APP_IMAGE='$APP_IMAGE' CLICKHOUSE_IMAGE='$CLICKHOUSE_IMAGE' DEPLOY_DIR='$DEPLOY_DIR' PROJECT_NAME='$PROJECT_NAME' GHCR_USERNAME='$GHCR_USERNAME' GHCR_TOKEN_B64='$GHCR_TOKEN_B64' CLICKHOUSE_PASSWORD_B64='$CLICKHOUSE_PASSWORD_B64' HF_TOKEN_B64='$HF_TOKEN_B64' HUGGINGFACE_DATASET_REPO_ID='$HUGGINGFACE_DATASET_REPO_ID' bash -s" <<'REMOTE'
           set -euo pipefail
 
           export DOCKER_CONFIG
@@ -102,12 +115,12 @@ jobs:
           GHCR_TOKEN="$(printf '%s' "$GHCR_TOKEN_B64" | base64 -d)"
           CLICKHOUSE_PASSWORD="$(printf '%s' "$CLICKHOUSE_PASSWORD_B64" | base64 -d)"
           HF_TOKEN="$(printf '%s' "$HF_TOKEN_B64" | base64 -d)"
-          export APP_IMAGE CLICKHOUSE_PASSWORD HF_TOKEN HUGGINGFACE_DATASET_REPO_ID
+          export APP_IMAGE CLICKHOUSE_IMAGE CLICKHOUSE_PASSWORD HF_TOKEN HUGGINGFACE_DATASET_REPO_ID
 
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
           cd "$DEPLOY_DIR"
           docker-compose -p "$PROJECT_NAME" -f docker-compose.deploy.yml pull
-          docker-compose -p "$PROJECT_NAME" -f docker-compose.deploy.yml up -d
+          docker-compose -p "$PROJECT_NAME" -f docker-compose.deploy.yml up -d clickhouse dagster dagit
           docker image prune -f
           REMOTE

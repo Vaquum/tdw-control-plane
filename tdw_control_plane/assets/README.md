@@ -5,7 +5,7 @@
 3) Follow the instructions at the head of `tdw_control_plane/definitions.py`
 4) Make Pull Request with the changes committed
 
-NOTE: Changes merged to `main` deploy the Dagster application services automatically
-through GitHub Actions. The workflow builds the app image, pushes it to GitHub Container
-Registry, and deploys `dagster` plus `dagit` to the remote host over SSH without relying
-on a server-side `.env` file.
+NOTE: Changes merged to `main` deploy the repo-defined production services automatically
+through GitHub Actions. The workflow builds the Dagster and ClickHouse images, pushes
+them to GitHub Container Registry, and deploys `clickhouse`, `dagster`, and `dagit`
+to the remote host over SSH without relying on a server-side `.env` file.
