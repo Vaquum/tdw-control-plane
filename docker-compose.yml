@@ -26,6 +26,8 @@ services:
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID:-vaquum/binance_btcusdt_1m_klines}
     volumes:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
@@ -41,6 +43,8 @@ services:
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HUGGINGFACE_DATASET_REPO_ID=${HUGGINGFACE_DATASET_REPO_ID:-vaquum/binance_btcusdt_1m_klines}
     volumes:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance

@@ -16,6 +16,9 @@ dependencies = [
   "requests",
   "matplotlib",
   "clickhouse-driver",
+  "clickhouse_connect",
+  "polars",
+  "huggingface_hub",
   "lz4>=4.0.0",
   "clickhouse-cityhash>=1.0.2",
 ]
