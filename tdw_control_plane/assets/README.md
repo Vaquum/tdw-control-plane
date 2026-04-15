@@ -5,4 +5,6 @@
 3) Follow the instructions at the head of `tdw_control_plane/definitions.py`
 4) Make Pull Request with the changes committed
 
-NOTE: For the changes to take effect in `tdw`, user `root` must run the command `@deploy` on the server. 
+NOTE: Changes merged to `main` deploy automatically through GitHub Actions. The workflow
+builds the images, pushes them to GitHub Container Registry, and deploys them to the
+remote host over SSH without relying on a server-side `.env` file.

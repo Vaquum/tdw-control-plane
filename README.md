@@ -28,4 +28,6 @@ Control plane for `trade-warehouse` (tdw).
 
 ## Docs
 
-No documentation.
+`main` deploys automatically through GitHub Actions. The workflow builds the Dagster
+and ClickHouse images, pushes them to GitHub Container Registry, and deploys them
+to the remote host over SSH with runtime secrets injected from GitHub repo secrets.

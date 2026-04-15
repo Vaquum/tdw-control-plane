@@ -8,5 +8,7 @@ COPY docker-requirements.txt .
 RUN pip install --no-cache-dir -r docker-requirements.txt
 
 ENV DAGSTER_HOME=/opt/trades-warehouse
+ENV PYTHONPATH=/opt/trades-warehouse
 WORKDIR /opt/trades-warehouse
 COPY . /opt/trades-warehouse
+RUN mkdir -p /opt/dagster-instance && pip install --no-cache-dir .
