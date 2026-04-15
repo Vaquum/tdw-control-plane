@@ -18,6 +18,7 @@ dependencies = [
   "clickhouse-driver",
   "clickhouse_connect",
   "polars",
+  "pyarrow",
   "huggingface_hub",
   "lz4>=4.0.0",
   "clickhouse-cityhash>=1.0.2",
