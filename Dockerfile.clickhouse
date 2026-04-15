@@ -1,3 +1,0 @@
-FROM clickhouse/clickhouse-server:latest
-
-COPY clickhouse-config.xml /etc/clickhouse-server/config.d/clickhouse-config.xml
