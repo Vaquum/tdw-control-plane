@@ -1,0 +1,86 @@
+name: pr_checks_typing
+
+# Mechanical typing gate. Three ratchets in one workflow:
+#
+#   1. Pyright configuration must remain strict and must ban explicit Any.
+#      Any weakening (typeCheckingMode != strict, reportExplicitAny != error,
+#      any report* set to none/warning/info/false) fails the build.
+#
+#   2. Escape-hatch patterns are ratcheted against .github/typing_budget.json:
+#      `: Any`, `-> Any`, `cast(Any, ...)`, `dict[..., Any]`, `list[Any]`,
+#      `# type: ignore`, `# pyright: ignore`, `# noqa`. Any file-system-wide
+#      increase fails the build. Decreases may be locked in by updating the
+#      budget file in the same PR.
+#
+#   3. Pyright strict error count is ratcheted against the same budget.
+#      Any increase fails the build. Decreases may be locked in the same way.
+#
+# Philosophy: gates, not language. The gate is what the PR must pass; the
+# documentation in this file is for humans reviewing the gate, not for the
+# agent being gated.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  merge_group:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pr_checks_typing:
+    name: pr_checks_typing
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Install pyright
+        run: pip install 'pyright==1.1.409'
+
+      - name: Run pyright strict (capture JSON)
+        run: |
+          set +e
+          pyright --outputjson > pyright_output.json
+          pyright_exit=$?
+          set -e
+          echo "pyright exit code: $pyright_exit"
+          python -c "
+          import json, pathlib, sys
+          p = pathlib.Path('pyright_output.json')
+          if not p.exists() or p.stat().st_size == 0:
+              print('::error::pyright produced no output', file=sys.stderr)
+              sys.exit(2)
+          d = json.loads(p.read_text())
+          s = d.get('summary', {})
+          print(f'pyright: files={s.get(\"filesAnalyzed\")} errors={s.get(\"errorCount\")} warnings={s.get(\"warningCount\")}')
+          "
+
+      - name: Run typing gate
+        run: python tools/typing_gate.py --pyright-json pyright_output.json
+
+      - name: Upload pyright output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pyright-output
+          path: pyright_output.json
+          retention-days: 14
