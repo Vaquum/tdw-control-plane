@@ -49,10 +49,13 @@ import tomllib
 from pathlib import Path
 from typing import Final
 
+# Strict `MAJOR.MINOR.PATCH` only. We explicitly reject prerelease
+# and build-metadata forms because this gate compares as integer
+# triples; accepting `1.3.1-alpha` but silently ignoring the `-alpha`
+# part would let `1.3.1-alpha` and `1.3.1` compare equal. The simpler
+# fix is to refuse ambiguous forms outright.
 SEMVER_RE: Final[re.Pattern[str]] = re.compile(
-    r'^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)'
-    r'(?:-(?P<pre>[0-9A-Za-z\-.]+))?'
-    r'(?:\+(?P<build>[0-9A-Za-z\-.]+))?$'
+    r'^(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)$'
 )
 
 CC_RE: Final[re.Pattern[str]] = re.compile(
@@ -71,12 +74,21 @@ LEVEL_ORDER: Final[dict[str, int]] = {
 
 
 def parse_semver(value: str) -> tuple[int, int, int]:
+    """Parse `MAJOR.MINOR.PATCH`. Reject any prerelease/build-metadata
+    form outright -- comparing `1.3.1-alpha` against `1.3.1` as integer
+    triples would say they are equal, which contradicts real semver
+    precedence (`1.3.1-alpha` < `1.3.1`). The gate's remit does not
+    include full precedence ordering, so the input format is narrowed
+    instead."""
     match = SEMVER_RE.match(value.strip())
     if match is None:
-        raise SystemExit(
-            f'version_gate: {value!r} is not a valid semver string. '
-            f'Expected `MAJOR.MINOR.PATCH[-pre][+build]`.'
+        print(
+            f'version_gate: {value!r} is not a valid version string. '
+            f'Expected strict `MAJOR.MINOR.PATCH` (no prerelease, no '
+            f'build metadata).',
+            file=sys.stderr,
         )
+        raise SystemExit(2)
     return int(match['major']), int(match['minor']), int(match['patch'])
 
 
@@ -84,20 +96,26 @@ def extract_version(pyproject_text: str, label: str) -> str:
     try:
         data = tomllib.loads(pyproject_text)
     except tomllib.TOMLDecodeError as exc:
-        raise SystemExit(
-            f'version_gate: cannot parse {label} pyproject.toml: {exc}'
-        ) from exc
+        print(
+            f'version_gate: cannot parse {label} pyproject.toml: {exc}',
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
     project = data.get('project')
     if not isinstance(project, dict):
-        raise SystemExit(
-            f'version_gate: {label} pyproject.toml has no [project] table'
+        print(
+            f'version_gate: {label} pyproject.toml has no [project] table',
+            file=sys.stderr,
         )
+        raise SystemExit(2)
     version = project.get('version')
     if not isinstance(version, str) or not version.strip():
-        raise SystemExit(
+        print(
             f'version_gate: {label} pyproject.toml [project].version is missing '
-            f'or not a string (got {version!r})'
+            f'or not a string (got {version!r})',
+            file=sys.stderr,
         )
+        raise SystemExit(2)
     return version.strip()
 
 

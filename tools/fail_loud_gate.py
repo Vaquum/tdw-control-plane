@@ -91,16 +91,21 @@ def find_python_files(root: Path, excludes: list[str]) -> list[Path]:
 
 def _collect_contextlib_names(tree: ast.AST) -> tuple[set[str], set[str]]:
     """Return (module_aliases, direct_names) where:
-      module_aliases -- names that refer to the contextlib module
-                        (e.g. 'contextlib' or 'X' after 'import
-                        contextlib as X');
-      direct_names   -- names that refer to contextlib.suppress. This
-                        set is populated by:
-                          * `from contextlib import suppress [as Y]`
-                          * module-level assignments whose RHS resolves
-                            to contextlib.suppress, iteratively to a
-                            fixed point (covers `sup = contextlib.suppress`,
-                            `sup2 = sup`, etc.).
+      module_aliases -- names that refer to the contextlib module,
+                        populated by `import contextlib [as X]` AND by
+                        module-level assignments whose RHS resolves to
+                        the contextlib module (`mod = contextlib`,
+                        `mod2 = mod`, ...);
+      direct_names   -- names that refer to contextlib.suppress,
+                        populated by `from contextlib import suppress
+                        [as Y]` AND by module-level assignments whose
+                        RHS resolves to contextlib.suppress
+                        (`sup = contextlib.suppress`,
+                        `sup = mod.suppress`, `sup2 = sup`, ...).
+
+    Both sets are expanded to a fixed point so arbitrarily chained
+    aliases of either kind are resolved. Bounded at 16 rounds; real
+    modules converge in 1-2.
     """
     module_aliases: set[str] = set()
     direct_names: set[str] = set()
@@ -116,12 +121,12 @@ def _collect_contextlib_names(tree: ast.AST) -> tuple[set[str], set[str]]:
                 if alias.name == 'suppress':
                     direct_names.add(alias.asname or 'suppress')
 
-    # Pass 2: assignment aliases, iterating to a fixed point so chained
-    # aliases `sup = contextlib.suppress; sup2 = sup; sup3 = sup2` all
-    # end up in direct_names. Bounded at 16 rounds; real modules
-    # converge in 1-2.
+    # Pass 2: fixed point over module-level assignments. Each round may
+    # grow module_aliases (via `mod = contextlib`) and direct_names
+    # (via `sup = contextlib.suppress` or `sup = mod.suppress`). Stops
+    # when neither set changes in a round.
     for _ in range(16):
-        before = len(direct_names)
+        before = (len(module_aliases), len(direct_names))
         for node in ast.walk(tree):
             value: ast.AST | None = None
             target_names: list[str] = []
@@ -138,9 +143,14 @@ def _collect_contextlib_names(tree: ast.AST) -> tuple[set[str], set[str]]:
                 continue
             if value is None or not target_names:
                 continue
+            # RHS refers to the contextlib module directly?
+            if isinstance(value, ast.Name) and value.id in module_aliases:
+                module_aliases.update(target_names)
+                continue
+            # RHS resolves to contextlib.suppress?
             if _resolves_to_suppress(value, direct_names, module_aliases):
                 direct_names.update(target_names)
-        if len(direct_names) == before:
+        if (len(module_aliases), len(direct_names)) == before:
             break
 
     return module_aliases, direct_names
@@ -258,28 +268,41 @@ def _load_json(path: Path, label: str) -> dict[str, object]:
     return data
 
 
-def _get_int(d: dict[str, object], key: str) -> int:
+def _get_int(d: dict[str, object], key: str, field_label: str) -> int:
+    """Return `d[key]` as a non-negative int; raise SystemExit(2) with
+    a clear message naming ``field_label`` if the value is missing or
+    wrong-shaped. ``field_label`` is the full JSON-path form of the
+    offending field (e.g. `categories.bare_except.total`)."""
     val = d.get(key, 0)
     if isinstance(val, bool) or not isinstance(val, int):
-        raise SystemExit(
-            f'fail_loud_gate: {key}.total must be a non-negative integer '
-            f'(got {val!r})'
+        print(
+            f'fail_loud_gate: {field_label} must be a non-negative integer '
+            f'(got {val!r})',
+            file=sys.stderr,
         )
+        raise SystemExit(2)
     if val < 0:
-        raise SystemExit(
-            f'fail_loud_gate: {key}.total must be non-negative (got {val})'
+        print(
+            f'fail_loud_gate: {field_label} must be non-negative (got {val})',
+            file=sys.stderr,
         )
+        raise SystemExit(2)
     return val
 
 
 def _category_total(budget: dict[str, object], cat: str) -> int:
     cats = budget.get('categories')
     if not isinstance(cats, dict):
-        raise SystemExit('fail_loud_gate: budget missing `categories` mapping')
+        print('fail_loud_gate: budget missing `categories` mapping', file=sys.stderr)
+        raise SystemExit(2)
     spec = cats.get(cat, {})
     if not isinstance(spec, dict):
-        raise SystemExit(f'fail_loud_gate: budget.categories.{cat} is not an object')
-    return _get_int(spec, 'total')
+        print(
+            f'fail_loud_gate: budget.categories.{cat} is not an object',
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    return _get_int(spec, 'total', f'categories.{cat}.total')
 
 
 def gate(

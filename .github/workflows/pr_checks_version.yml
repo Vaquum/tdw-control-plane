@@ -48,19 +48,21 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Fetch PR title
+      - name: Extract PR title from event payload
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           set -euo pipefail
-          PR_NUMBER="${{ github.event.pull_request.number }}"
-          if [ -z "$PR_NUMBER" ]; then
-            echo "::error::this workflow only runs on pull_request events that carry a PR number"
+          if [ -z "${PR_TITLE:-}" ]; then
+            echo "::error::github.event.pull_request.title is empty; this workflow only runs on pull_request events that carry a PR title"
             exit 1
           fi
-          gh pr view "$PR_NUMBER" --repo "${{ github.repository }}" \
-            --json title --jq .title > pr_title.txt
-          echo "PR #$PR_NUMBER title: $(cat pr_title.txt)"
+          # Read from the event payload rather than shelling out to
+          # `gh pr view` -- the title is already in the event context,
+          # so the extra API call (and its rate-limit / transient-
+          # failure surface) was unnecessary.
+          printf '%s' "$PR_TITLE" > pr_title.txt
+          echo "PR title: $PR_TITLE"
 
       - name: Extract base + head artifacts
         run: |
