@@ -42,6 +42,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # full history, so we can read the budget at base ref
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -56,6 +58,27 @@ jobs:
       - name: Install pyright
         run: pip install 'pyright==1.1.408'
 
+      - name: Fetch base-ref budget
+        run: |
+          # The base-ref budget is the protected oracle. The PR's own budget
+          # cannot raise any value against it. For pull_request / merge_group
+          # events the base is github.base_ref; for push-to-main the base is
+          # HEAD~1 (previous tip of main).
+          set -euo pipefail
+          if [ -n "${{ github.base_ref }}" ]; then
+            BASE_REV="origin/${{ github.base_ref }}"
+            git fetch origin "${{ github.base_ref }}" --depth=1 2>/dev/null || true
+          else
+            BASE_REV="HEAD~1"
+          fi
+          echo "base rev: $BASE_REV"
+          if git show "$BASE_REV:.github/typing_budget.json" > base_budget.json 2>/dev/null; then
+            echo "base budget fetched ($(wc -c < base_budget.json) bytes)"
+          else
+            echo "base rev has no typing_budget.json (first commit introducing the gate)"
+            rm -f base_budget.json
+          fi
+
       - name: Run pyright strict (capture JSON)
         run: |
           set +e
@@ -63,7 +86,7 @@ jobs:
           pyright_exit=$?
           set -e
           echo "pyright exit code: $pyright_exit"
-          python -c "
+          python <<'PY'
           import json, pathlib, sys
           p = pathlib.Path('pyright_output.json')
           if not p.exists() or p.stat().st_size == 0:
@@ -71,11 +94,16 @@ jobs:
               sys.exit(2)
           d = json.loads(p.read_text())
           s = d.get('summary', {})
-          print(f'pyright: files={s.get(\"filesAnalyzed\")} errors={s.get(\"errorCount\")} warnings={s.get(\"warningCount\")}')
-          "
+          print(f"pyright: files={s.get('filesAnalyzed')} errors={s.get('errorCount')} warnings={s.get('warningCount')}")
+          PY
 
       - name: Run typing gate
-        run: python tools/typing_gate.py --pyright-json pyright_output.json
+        run: |
+          args=( --pyright-json pyright_output.json )
+          if [ -f base_budget.json ]; then
+            args+=( --base-budget base_budget.json )
+          fi
+          python tools/typing_gate.py "${args[@]}"
 
       - name: Upload pyright output
         if: always()
