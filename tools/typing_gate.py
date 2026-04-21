@@ -320,30 +320,54 @@ def gate_pyright_errors(
 
 def gate_budget_source(
     base_budget_path: str | None,
+    bootstrap: bool,
     head_budget: dict[str, object],
 ) -> list[str]:
+    """Compare the head budget to the budget at the protected base ref.
+    The PR cannot raise its own ceiling. Two legal states:
+
+      * ``--base-budget PATH`` with PATH existing and valid JSON: do the
+        base-vs-head comparison.
+      * ``--bootstrap``: explicit first-commit override for the PR that
+        introduces ``.github/typing_budget.json`` to main. The workflow
+        selects this mode mechanically by diffing against the base ref.
+
+    Any other state -- including a missing ``--base-budget`` file
+    without ``--bootstrap`` -- is a hard failure. A graceful skip on
+    missing file would convert ``someone deleted the budget from main``
+    into ``nothing to enforce'', which is the pattern this gate exists
+    to prevent.
+    """
+
+    if bootstrap:
+        if base_budget_path is not None:
+            return [
+                'typing_gate: --bootstrap and --base-budget are mutually '
+                'exclusive; pass exactly one.'
+            ]
+        # Bootstrap mode: the PR introduces the budget to main. The
+        # workflow confirmed this by checking that the head commit adds
+        # .github/typing_budget.json. No base-vs-head comparison in this
+        # case -- there is no base.
+        return []
+
     if base_budget_path is None:
-        # First-time run or unable to fetch base; the workflow must
-        # provide --base-budget in PR / merge_group / push-to-main.
-        # Absence here is a config error, not a graceful skip.
         return [
-            'typing_gate: --base-budget was not provided; '
-            'the workflow must fetch the budget from the protected base ref '
-            'and pass it as --base-budget'
+            'typing_gate: neither --base-budget nor --bootstrap was given. '
+            'The workflow must either (a) fetch the budget from the '
+            'protected base ref and pass --base-budget PATH, or (b) pass '
+            '--bootstrap if this commit introduces the budget.'
         ]
 
     base_path = Path(base_budget_path)
     if not base_path.is_file():
-        # Base ref has no budget file — this is the first commit that
-        # introduces the gate. In that case head is the baseline; nothing
-        # to compare against.
-        print(
-            f'typing_gate: base-ref budget not found at {base_path} '
-            f'(first commit introducing the gate?); skipping '
-            f'budget-source ratchet',
-            file=sys.stderr,
-        )
-        return []
+        return [
+            f'typing_gate: base-ref budget not found at {base_path} and '
+            f'--bootstrap was not given. Either (a) the budget was '
+            f'deleted from the protected base ref -- restore it -- or '
+            f'(b) this is the commit introducing the budget, in which '
+            f'case pass --bootstrap. Silent skip is not an option.'
+        ]
 
     try:
         base_budget = json.loads(base_path.read_text())
@@ -557,6 +581,17 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        '--bootstrap',
+        action='store_true',
+        help=(
+            'Explicit first-commit override: skip the base-vs-head '
+            'comparison because this commit introduces the budget to '
+            'the protected base ref. The workflow selects this mode '
+            'mechanically by diffing against the base ref; it must not '
+            'be set by hand.'
+        ),
+    )
+    parser.add_argument(
         '--update-budget',
         action='store_true',
         help='Regenerate .github/typing_budget.json from current repo state',
@@ -581,7 +616,7 @@ def main() -> int:
     for msg in gate_pyright_config(config):
         failures.append(('pyright-config', msg))
 
-    for msg in gate_budget_source(args.base_budget, budget):
+    for msg in gate_budget_source(args.base_budget, args.bootstrap, budget):
         failures.append(('budget-source-ratchet', msg))
 
     for msg in gate_escape_hatch_ratchet(budget):
