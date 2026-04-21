@@ -39,15 +39,18 @@ code_location_name = "tdw_control_plane"
 # --------------------------------------------------------------------
 # Pyright strict configuration.
 #
-# Strict mode plus explicit bans on the Any escape hatch. Every
-# report* key here is either "error" or absent (to inherit the strict
-# default). The typing-gate workflow asserts this config on every PR;
-# weakening any of these values will fail pr_checks_typing.
+# Every report* key here is either "error" or absent (to inherit the
+# strict default). The pr_checks_typing workflow asserts this config
+# on every PR; weakening any of these values, or removing any required
+# key, fails the build.
 #
-# The Origo session made the failure mode visible: strict mode alone
-# does not prevent `: Any` annotations or `cast(Any, ...)` calls, and
-# a codebase can be "pyright strict clean" while being soaked in Any.
-# reportExplicitAny = "error" closes that hole.
+# Note on reportExplicitAny: pyright 1.1.408 (the pinned toolchain
+# version) emits `Config contains unrecognized setting` for this key
+# and does not honor it. We keep it here as a forward-compatible
+# config-presence requirement for the day pyright respects it. The
+# Any escape hatch is enforced today by the AST-based sub-gate in
+# tools/typing_gate.py (gate_any_references_ast), which resolves
+# every surface form including module-level assignment aliases.
 # --------------------------------------------------------------------
 
 [tool.pyright]

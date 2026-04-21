@@ -1,23 +1,45 @@
 name: pr_checks_typing
 
-# Mechanical typing gate. Three ratchets in one workflow:
+# Mechanical typing gate. The gate is tools/typing_gate.py; this
+# workflow invokes it. The deterministic rules the gate enforces
+# are listed in full in the PR description; a summary follows.
 #
-#   1. Pyright configuration must remain strict and must ban explicit Any.
-#      Any weakening (typeCheckingMode != strict, reportExplicitAny != error,
-#      any report* set to none/warning/info/false) fails the build.
+#   1. Pyright config audit. Required keys must be present with their
+#      required values (typeCheckingMode=strict, reportExplicitAny,
+#      reportMissingImports, reportMissingTypeStubs, reportUnknown*,
+#      reportMissingParameterType, reportConstantRedefinition,
+#      reportImportCycles -- all "error"). No report* key may be set
+#      to none/warning/info/false. pyright.include must equal
+#      ["tdw_control_plane"]. pyrightconfig.json must not exist
+#      outside vendored paths. Note: pyright 1.1.408 ignores
+#      reportExplicitAny at runtime; the Any enforcement is the AST
+#      ratchet below, not this config key.
 #
-#   2. Escape-hatch patterns are ratcheted against .github/typing_budget.json:
-#      `: Any`, `-> Any`, `cast(Any, ...)`, `dict[..., Any]`, `list[Any]`,
-#      `# type: ignore`, `# pyright: ignore`, `# noqa`. Any file-system-wide
-#      increase fails the build. Decreases may be locked in by updating the
-#      budget file in the same PR.
+#   2. Escape-hatch regex ratchet. Counts `: Any`, `-> Any`,
+#      `cast(Any, ...)`, `dict[..., Any]`, `list[Any]`, `tuple[..., Any]`,
+#      `from typing import ... Any`, `# type: ignore`, `# pyright: ignore`,
+#      `# noqa` across the package. Any file-system-wide increase fails.
 #
-#   3. Pyright strict error count is ratcheted against the same budget.
-#      Any increase fails the build. Decreases may be locked in the same way.
+#   3. AST Any-reference ratchet. Parses each file and counts every
+#      reference to typing.Any: bare `Any`, `typing.Any`, `t.Any`,
+#      aliased imports (`from typing import Any as X`), and module-
+#      level assignment aliases (`A = typing.Any`, chained `B = A`).
+#      Any increase fails. This is the primary Any enforcement today.
 #
-# Philosophy: gates, not language. The gate is what the PR must pass; the
-# documentation in this file is for humans reviewing the gate, not for the
-# agent being gated.
+#   4. Pyright error-count ratchet. summary.errorCount from
+#      `pyright --outputjson` must not increase over base.
+#
+#   5. filesAnalyzed ratchet. pyright must analyze at least as many
+#      files as the gate finds under package_root.
+#
+#   6. Budget-source ratchet. The head-ref budget cannot raise any
+#      number vs the base-ref budget, cannot delete a pattern key,
+#      cannot change package_root, cannot add excludes, and cannot
+#      rewrite a per-pattern regex. Only reductions are allowed.
+#
+# Philosophy: gates, not language. The gate is what the PR must pass.
+# The comment here describes intent for humans reviewing the workflow;
+# the source of truth for rules is tools/typing_gate.py.
 
 on:
   pull_request:

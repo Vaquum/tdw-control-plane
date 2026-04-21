@@ -125,15 +125,20 @@ def count_pattern(files: list[Path], pattern: str) -> int:
 def _collect_any_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
     """For one module AST, return:
 
-      * ``direct`` — names that directly refer to ``typing.Any``. Populated
-        by ``from typing import Any`` (key ``Any``) and by aliased forms
-        such as ``from typing import Any as X`` (key ``X``).
+      * ``direct`` — names that refer to ``typing.Any``. Populated by
+        ``from typing import Any`` (key ``Any``), aliased forms like
+        ``from typing import Any as X`` (key ``X``), AND by module-level
+        assignment aliases such as ``A = typing.Any`` (key ``A``) or
+        chained aliases ``B = A`` (key ``B``). Iteratively expanded to
+        a fixed point so ``A = typing.Any; B = A; C = B`` all resolve.
       * ``module_aliases`` — names that refer to the ``typing`` module.
         Populated by ``import typing`` (``typing``) and ``import typing
         as t`` (``t``).
     """
     direct: set[str] = set()
     module_aliases: set[str] = set()
+
+    # Pass 1: import statements.
     for node in ast.walk(tree):
         if isinstance(node, ast.ImportFrom) and node.module == 'typing':
             for alias in node.names:
@@ -143,7 +148,53 @@ def _collect_any_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
             for alias in node.names:
                 if alias.name == 'typing':
                     module_aliases.add(alias.asname or 'typing')
+
+    # Pass 2: assignment aliases. Iterate to a fixed point so chained
+    # aliases (``A = typing.Any``; ``B = A``; ``C = B``) all resolve.
+    # Bounded at 16 rounds to prevent runaway; any real module converges
+    # in a couple of passes.
+    for _ in range(16):
+        before = len(direct)
+        for node in ast.walk(tree):
+            value: ast.AST | None = None
+            target_names: list[str] = []
+            if isinstance(node, ast.Assign):
+                value = node.value
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        target_names.append(t.id)
+            elif isinstance(node, ast.AnnAssign):
+                value = node.value
+                if isinstance(node.target, ast.Name):
+                    target_names.append(node.target.id)
+            else:
+                continue
+            if value is None or not target_names:
+                continue
+            if _resolves_to_any(value, direct, module_aliases):
+                for name in target_names:
+                    direct.add(name)
+        if len(direct) == before:
+            break
+
     return direct, module_aliases
+
+
+def _resolves_to_any(
+    node: ast.AST,
+    direct: set[str],
+    module_aliases: set[str],
+) -> bool:
+    """True if evaluating ``node`` would produce ``typing.Any`` under
+    the current direct / module-alias bindings. Used by
+    ``_collect_any_bindings`` to expand assignment-alias chains.
+    """
+    if isinstance(node, ast.Name):
+        return node.id in direct
+    if isinstance(node, ast.Attribute) and node.attr == 'Any':
+        target = node.value
+        return isinstance(target, ast.Name) and target.id in module_aliases
+    return False
 
 
 def _is_any_reference(
@@ -153,10 +204,16 @@ def _is_any_reference(
 ) -> bool:
     """True if ``node`` is a usage-site reference to ``typing.Any``.
 
-    Catches bare ``Any`` / aliased-direct names (``ast.Name``) and
-    attribute access like ``typing.Any`` / ``t.Any`` (``ast.Attribute``).
+    Catches bare ``Any`` / aliased-direct names and attribute access
+    like ``typing.Any`` / ``t.Any``. Limits ``ast.Name`` matches to
+    load context so we do not double-count the LHS of an assignment
+    that also has a typing.Any reference on its RHS.
     """
     if isinstance(node, ast.Name):
+        # Only Load context is a usage site. Store (LHS of =), Del, and
+        # annotation targets (also Store) are bindings, not uses.
+        if not isinstance(getattr(node, 'ctx', None), ast.Load):
+            return False
         return node.id in direct
     if isinstance(node, ast.Attribute) and node.attr == 'Any':
         target = node.value
@@ -208,18 +265,32 @@ def count_any_references_ast(files: list[Path]) -> int:
 
 # Required [tool.pyright] keys.
 #
-# Not listed: reportExplicitAny. pyright 1.1.408 (the pinned version)
-# emits `Config contains unrecognized setting "reportExplicitAny"` and
-# silently ignores it. We do not claim in this gate what the toolchain
-# does not actually enforce; the Any surface is enforced by the
-# AST-based gate_any_references_ast() below, which covers `Any`,
-# `typing.Any`, aliased imports (`from typing import Any as X`), and
-# module-qualified access (`import typing as t; t.Any`) -- all forms
-# the regex-based ratchet was blind to. The pyproject.toml still sets
-# reportExplicitAny = "error" as a forward-compatible aspirational
-# value for when pyright (or whatever we upgrade to) respects it.
+# The gate asserts these keys are PRESENT in pyproject.toml with the
+# exact values below. That is a configuration-presence check: the
+# config file carries the values.
+#
+# What actually enforces what at runtime is split:
+#
+#   * reportMissingImports, reportMissingTypeStubs, reportUnknown*,
+#     reportMissingParameterType, reportConstantRedefinition,
+#     reportImportCycles: ENFORCED by pyright itself. Every error
+#     pyright emits under these rules is counted toward
+#     summary.errorCount, which gate_pyright_errors() ratchets.
+#
+#   * reportExplicitAny: pyright 1.1.408 (the pinned version) emits
+#     `Config contains unrecognized setting "reportExplicitAny"` and
+#     does not honor it. We keep it required here anyway as a
+#     forward-compatible config-presence check: the day pyright or its
+#     successor respects the setting, enforcement kicks in without a
+#     gate change. Today, the actual Any enforcement is the AST-based
+#     gate_any_references_ast() below, which resolves every surface
+#     form including module-level assignment aliases.
+#
+#   * typeCheckingMode: this must be "strict" so that all of the
+#     strict-default report* rules above are active.
 REQUIRED_PYRIGHT: Final[dict[str, object]] = {
     'typeCheckingMode': 'strict',
+    'reportExplicitAny': 'error',
     'reportMissingImports': 'error',
     'reportMissingTypeStubs': 'error',
     'reportUnknownArgumentType': 'error',
@@ -242,18 +313,34 @@ FORBIDDEN_VALUES: Final[frozenset[object]] = frozenset(
 )
 
 
+_PRUNE_DIRS: Final[frozenset[str]] = frozenset(
+    {'.git', '.venv', 'venv', 'node_modules', 'build', 'dist', '__pycache__'}
+)
+
+
+def _find_pyrightconfig_json() -> list[Path]:
+    """Walk the repo for pyrightconfig.json files with directory
+    pruning. ``Path.rglob`` descends into ``.git`` — which is huge on
+    a fetch-depth=0 CI checkout — before filtering, so we use os.walk
+    and remove prune targets from ``dirnames`` before recursing.
+    """
+    import os
+    found: list[Path] = []
+    for dirpath, dirnames, filenames in os.walk(REPO_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in _PRUNE_DIRS]
+        if 'pyrightconfig.json' in filenames:
+            found.append(Path(dirpath) / 'pyrightconfig.json')
+    return sorted(found)
+
+
 def gate_pyright_config(config: dict[str, object]) -> list[str]:
     failures: list[str] = []
 
     # Pyright prefers pyrightconfig.json over [tool.pyright] in pyproject.toml.
     # A PR that drops such a file anywhere in the repo silently shadows every
     # setting this gate audits. Ban it outright.
-    for cfg in sorted(REPO_ROOT.rglob('pyrightconfig.json')):
+    for cfg in _find_pyrightconfig_json():
         rel = cfg.relative_to(REPO_ROOT)
-        # Skip vendored/dependency paths (.venv, node_modules, etc.)
-        parts = rel.parts
-        if any(p in {'.venv', 'venv', 'node_modules', 'build', 'dist', '.git'} for p in parts):
-            continue
         failures.append(
             f'pyrightconfig.json found at {rel}. '
             f'Pyright prefers this file over pyproject.toml and would '
@@ -403,7 +490,11 @@ def gate_pyright_errors(
     if not path.is_file():
         return [f'pyright output not found at {path}']
     try:
-        data = json.loads(path.read_text())
+        raw_text = path.read_text(encoding='utf-8')
+    except OSError as exc:
+        return [f'pyright output at {path} could not be read: {exc}']
+    try:
+        data = json.loads(raw_text)
     except json.JSONDecodeError as e:
         return [f'pyright output is not valid JSON: {e}']
 
@@ -529,6 +620,62 @@ def gate_budget_source(
 
     failures: list[str] = []
 
+    # Structural invariants: the scan surface cannot be narrowed.
+    #
+    # * package_root identical: cannot point the gate at a smaller subtree.
+    # * excludes: head must be a subset of base (can remove, never add).
+    #   Adding an exclude hides files from the ratchet.
+    base_root = base_budget.get('package_root')
+    head_root = head_budget.get('package_root')
+    if base_root != head_root:
+        failures.append(
+            f'package_root changed from {base_root!r} (base) to '
+            f'{head_root!r} (head). The scan surface cannot be narrowed '
+            f'by the PR it gates.'
+        )
+
+    base_excludes_raw = base_budget.get('excludes', [])
+    head_excludes_raw = head_budget.get('excludes', [])
+    base_excludes = set(base_excludes_raw) if isinstance(base_excludes_raw, list) else set()
+    head_excludes = set(head_excludes_raw) if isinstance(head_excludes_raw, list) else set()
+    added_excludes = head_excludes - base_excludes
+    if added_excludes:
+        failures.append(
+            f'excludes added in head that are not in base: '
+            f'{sorted(added_excludes)!r}. New excludes hide files from '
+            f'the escape-hatch ratchet; add them in a separate PR that '
+            f'ratchets the totals first.'
+        )
+
+    # Per-pattern regex identity: a regex in head for a key present in
+    # base must be the exact same regex. Otherwise a PR could rewrite
+    # the regex to one that never matches and keep the total at zero,
+    # neutering that ratchet key.
+    base_patterns_raw = base_budget.get('patterns')
+    head_patterns_raw = head_budget.get('patterns')
+    base_patterns: dict[str, object] = (
+        base_patterns_raw if isinstance(base_patterns_raw, dict) else {}
+    )
+    head_patterns: dict[str, object] = (
+        head_patterns_raw if isinstance(head_patterns_raw, dict) else {}
+    )
+    for key, base_spec in base_patterns.items():
+        if key not in head_patterns:
+            continue  # handled below by key-preservation check
+        head_spec = head_patterns[key]
+        if not (isinstance(base_spec, dict) and isinstance(head_spec, dict)):
+            continue
+        base_rx = base_spec.get('pattern')
+        head_rx = head_spec.get('pattern')
+        if base_rx != head_rx:
+            failures.append(
+                f'pattern {key!r} regex changed from {base_rx!r} (base) '
+                f'to {head_rx!r} (head). Regex strings for keys present '
+                f'in the base budget must remain identical; rewriting '
+                f'the regex can nullify the ratchet while leaving the '
+                f'total unchanged.'
+            )
+
     # Top-level integer-ceiling sections (pyright_errors, any_references).
     for section in ('pyright_errors', 'any_references'):
         base_sec = base_budget.get(section)
@@ -556,16 +703,9 @@ def gate_budget_source(
                 f'by the PR it gates.'
             )
 
-    # Pattern ceilings and key preservation
-    base_patterns_raw = base_budget.get('patterns')
-    head_patterns_raw = head_budget.get('patterns')
-    base_patterns: dict[str, object] = (
-        base_patterns_raw if isinstance(base_patterns_raw, dict) else {}
-    )
-    head_patterns: dict[str, object] = (
-        head_patterns_raw if isinstance(head_patterns_raw, dict) else {}
-    )
-
+    # Pattern key preservation and per-key total ratchet. base_patterns
+    # and head_patterns are already extracted above for the regex-
+    # identity check; reuse.
     for key in base_patterns:
         if key not in head_patterns:
             failures.append(
@@ -614,7 +754,11 @@ def gate_files_analyzed(
         return []
 
     try:
-        data = json.loads(path.read_text())
+        raw_text = path.read_text(encoding='utf-8')
+    except OSError as exc:
+        return [f'pyright output at {path} could not be read: {exc}']
+    try:
+        data = json.loads(raw_text)
     except json.JSONDecodeError as e:
         return [f'pyright output is not valid JSON: {e}']
     if not isinstance(data, dict):
