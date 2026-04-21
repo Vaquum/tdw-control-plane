@@ -7,7 +7,7 @@ name = "quickstart_etl"
 version = "1.2.1"
 description = "Trades Warehouse Control Plane"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "dagster",
   "dagster-cloud",

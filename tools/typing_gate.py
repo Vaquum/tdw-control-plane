@@ -48,24 +48,52 @@ PYPROJECT_PATH: Final[Path] = REPO_ROOT / 'pyproject.toml'
 # File walking
 # -------------------------------------------------------------------
 
+def _is_excluded(relative_path: Path, excludes: list[str]) -> bool:
+    """Path-part match, not substring. An exclude entry matches only if
+    its parts appear as a contiguous slice of the path's parts. This
+    prevents an entry like 'dist' from spuriously matching a file such
+    as 'tdw_control_plane/distance.py'."""
+    parts = relative_path.parts
+    for ex in excludes:
+        ex_parts = Path(ex).parts
+        if not ex_parts:
+            continue
+        w = len(ex_parts)
+        for i in range(0, max(0, len(parts) - w + 1)):
+            if parts[i:i + w] == ex_parts:
+                return True
+    return False
+
+
 def find_python_files(root: Path, excludes: list[str]) -> list[Path]:
     files: list[Path] = []
     for p in sorted(root.rglob('*.py')):
-        rel = str(p.relative_to(REPO_ROOT))
-        if any(ex in rel for ex in excludes):
+        rel = p.relative_to(REPO_ROOT)
+        if _is_excluded(rel, excludes):
             continue
         files.append(p)
     return files
 
 
 def count_pattern(files: list[Path], pattern: str) -> int:
-    rx = re.compile(pattern)
+    """Count non-overlapping matches of `pattern` across `files`. Any
+    read or decode error is a fatal setup failure (not a silent skip);
+    a silently skipped file would under-count escape hatches and let
+    regressions through."""
+    try:
+        rx = re.compile(pattern)
+    except re.error as exc:
+        raise SystemExit(
+            f'typing_gate: invalid regex in budget ({pattern!r}): {exc}'
+        ) from exc
     total = 0
     for f in files:
         try:
-            text = f.read_text(encoding='utf-8', errors='ignore')
-        except OSError:
-            continue
+            text = f.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError) as exc:
+            raise SystemExit(
+                f'typing_gate: cannot read {f}: {exc}'
+            ) from exc
         total += len(rx.findall(text))
     return total
 
@@ -143,15 +171,25 @@ def gate_escape_hatch_ratchet(budget: dict[str, object]) -> list[str]:
 
     for name, spec in patterns.items():
         if not isinstance(spec, dict):
-            continue
-        pattern = str(spec.get('pattern', ''))
-        if not pattern:
-            continue
-        budget_total = int(spec.get('total', 0))
+            return [f'typing_budget.json: pattern {name!r} must be an object']
+        pattern = spec.get('pattern')
+        if not isinstance(pattern, str) or not pattern:
+            return [f'typing_budget.json: pattern {name!r} has no regex']
+        raw_total = spec.get('total', 0)
+        if isinstance(raw_total, bool) or not isinstance(raw_total, int):
+            return [
+                f'typing_budget.json: pattern {name!r} total must be a '
+                f'non-negative integer (got {raw_total!r})'
+            ]
+        if raw_total < 0:
+            return [
+                f'typing_budget.json: pattern {name!r} total must be '
+                f'non-negative (got {raw_total})'
+            ]
         current = count_pattern(files, pattern)
-        if current > budget_total:
+        if current > raw_total:
             failures.append(
-                f'[{name}] budget={budget_total} current={current} '
+                f'[{name}] budget={raw_total} current={current} '
                 f'(pattern={pattern!r}) -- ratchet exceeded. '
                 f'Remove the new escape hatch or lower the budget.'
             )
@@ -177,8 +215,18 @@ def gate_pyright_errors(
     except json.JSONDecodeError as e:
         return [f'pyright output is not valid JSON: {e}']
 
-    summary = data.get('summary', {}) if isinstance(data, dict) else {}
-    current_errors = int(summary.get('errorCount', 0))
+    if not isinstance(data, dict):
+        return ['pyright output must be a JSON object']
+    summary = data.get('summary', {})
+    if not isinstance(summary, dict):
+        return ['pyright output .summary must be an object']
+    raw_current = summary.get('errorCount', 0)
+    if isinstance(raw_current, bool) or not isinstance(raw_current, int):
+        return [
+            f'pyright output .summary.errorCount must be an integer '
+            f'(got {raw_current!r})'
+        ]
+    current_errors = raw_current
 
     py_budget_raw = budget.get('pyright_errors')
     if not isinstance(py_budget_raw, dict):
@@ -186,7 +234,18 @@ def gate_pyright_errors(
             'typing_budget.json must include a pyright_errors section '
             "with {'total': <int>}"
         ]
-    budget_total = int(py_budget_raw.get('total', 0))
+    raw_budget_total = py_budget_raw.get('total', 0)
+    if isinstance(raw_budget_total, bool) or not isinstance(raw_budget_total, int):
+        return [
+            f'typing_budget.json: pyright_errors.total must be a '
+            f'non-negative integer (got {raw_budget_total!r})'
+        ]
+    if raw_budget_total < 0:
+        return [
+            f'typing_budget.json: pyright_errors.total must be '
+            f'non-negative (got {raw_budget_total})'
+        ]
+    budget_total = raw_budget_total
 
     if current_errors > budget_total:
         # Per-rule summary for the failure message.
