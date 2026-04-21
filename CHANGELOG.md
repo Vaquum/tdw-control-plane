@@ -1,3 +1,8 @@
+# v1.3.1 on April 21, 2026
+- Add `pr_checks_fail_loud` workflow and `tools/fail_loud_gate.py` ratcheting seven silent-fallback categories in the package: `bare_except`, `empty_pass`, `empty_ellipsis`, `empty_return_none`, `empty_continue_break`, `contextlib_suppress`, `errors_ignore_kwarg`. Base-vs-head protection so the budget cannot be weakened in the same PR that gates against it.
+- Add `.github/fail_loud_budget.json` as the committed baseline oracle (`bare_except=4`, `empty_pass=6`, `empty_continue_break=1`, all others zero on 35 production files at introduction).
+- Add `pr_checks_version` workflow and `tools/version_gate.py` enforcing five rules on every PR: pyproject.toml differs, `[project].version` advances by strict semver, CHANGELOG.md differs, CHANGELOG's first `# v<X.Y.Z>` header matches the new version, and the bump level meets the minimum required by the PR's Conventional Commits type (`type!` → major, `feat` → minor, anything else → patch).
+
 # v1.3.0 on April 21, 2026
 - Add `.github/ISSUE_TEMPLATE/slice.yml` — slice issue template. Eleven sections each carrying a blockquoted `> **Significance.**` paragraph that survives into the filed issue body.
 - Add `pr_checks_slice` workflow and `tools/slice_gate.py` enforcing the PR↔slice-issue contract as eight deterministic rules: exactly one `Closes/Fixes/Resolves #N` reference, the reference resolves in the repo, resolves to an issue (not another PR), issue is OPEN, issue has the `slice` label, PR title byte-equals issue title, issue body contains every full multi-line Significance blockquote from the template verbatim (extracted at gate runtime so template and validator cannot drift apart), PR diff ⊆ issue `## Surfaces`, PR diff ∩ issue `## Out of Scope` = ∅.
