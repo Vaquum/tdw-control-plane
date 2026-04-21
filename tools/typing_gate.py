@@ -881,7 +881,13 @@ def main() -> int:
     parser.add_argument(
         '--pyright-json',
         default=None,
-        help='Path to pyright --outputjson output; enables pyright-error ratchet',
+        help=(
+            'Path to pyright --outputjson output. REQUIRED for normal gate '
+            'runs (omitted only when --update-budget is set and pyright '
+            'output is not available). Without it the pyright-error and '
+            'filesAnalyzed ratchets cannot run; the gate therefore '
+            'hard-fails if this flag is absent on a normal run.'
+        ),
     )
     parser.add_argument(
         '--base-budget',
@@ -913,6 +919,23 @@ def main() -> int:
     if args.update_budget:
         update_budget(args.pyright_json)
         return 0
+
+    # Normal gate runs must supply the pyright output. A workflow edit
+    # that drops the flag would otherwise silently skip the pyright-
+    # error and filesAnalyzed ratchets. We refuse to run instead of
+    # producing a green gate on half the checks.
+    if args.pyright_json is None:
+        print(
+            'TYPING GATE -- FAIL\n\n'
+            '  gate: runtime-args\n'
+            '    - --pyright-json was not provided. Normal gate runs require '
+            'pyright output so the pyright-error-ratchet and files-analyzed-'
+            'ratchet can run. Pass --pyright-json PATH or, if regenerating '
+            'the budget, use --update-budget instead.\n\n'
+            '1 failure(s). Merge blocked.',
+            file=sys.stdout,
+        )
+        return 1
 
     try:
         config = load_pyproject()

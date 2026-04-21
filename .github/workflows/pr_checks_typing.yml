@@ -89,15 +89,22 @@ jobs:
           # is that THIS commit adds the file to main for the first time.
           # The workflow verifies that mechanically by diffing against the
           # base ref; if the head does not add the file, the gate step
-          # hard-fails. There is no graceful skip.
+          # hard-fails. There is no graceful skip and no silent fetch
+          # failure -- if we cannot reach the base ref, the job fails with
+          # the fetch error visible, not on a downstream misbehavior.
           set -euo pipefail
           if [ -n "${{ github.base_ref }}" ]; then
             BASE_REV="origin/${{ github.base_ref }}"
-            git fetch origin "${{ github.base_ref }}" --depth=1 2>/dev/null || true
+            git fetch origin "${{ github.base_ref }}" --depth=1
           else
             BASE_REV="HEAD~1"
           fi
           echo "base rev: $BASE_REV"
+
+          # Verify BASE_REV actually resolves now; if not, the fetch above
+          # produced no usable ref and we must fail loudly rather than
+          # mis-route the downstream compare/bootstrap decision.
+          git rev-parse --verify "$BASE_REV" >/dev/null
 
           if git show "$BASE_REV:.github/typing_budget.json" > base_budget.json 2>/dev/null; then
             echo "mode=compare" >> "$GITHUB_OUTPUT"
