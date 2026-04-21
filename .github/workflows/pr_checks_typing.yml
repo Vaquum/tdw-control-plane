@@ -99,11 +99,13 @@ jobs:
 
       - name: Run typing gate
         run: |
-          args=( --pyright-json pyright_output.json )
-          if [ -f base_budget.json ]; then
-            args+=( --base-budget base_budget.json )
-          fi
-          python tools/typing_gate.py "${args[@]}"
+          # --base-budget is ALWAYS passed. If the file does not exist
+          # (first commit introducing the gate) the gate will skip the
+          # base-vs-head comparison with a warning. Omitting the flag
+          # would be treated as workflow misconfiguration.
+          python tools/typing_gate.py \
+            --pyright-json pyright_output.json \
+            --base-budget base_budget.json
 
       - name: Upload pyright output
         if: always()
