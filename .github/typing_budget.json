@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "package_root": "tdw_control_plane",
   "excludes": [
     "__pycache__",
@@ -51,5 +51,8 @@
   },
   "pyright_errors": {
     "total": 1213
+  },
+  "any_references": {
+    "total": 0
   }
 }

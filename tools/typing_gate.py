@@ -43,6 +43,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import ast
 import json
 import re
 import sys
@@ -110,12 +111,115 @@ def count_pattern(files: list[Path], pattern: str) -> int:
 
 
 # -------------------------------------------------------------------
+# AST-based Any detection.
+#
+# The regex ratchet catches bare ``Any`` (``x: Any``) but is blind to
+# qualified / aliased forms: ``typing.Any``, ``t.Any`` after ``import
+# typing as t``, ``A`` after ``from typing import Any as A``, and any
+# chained attribute access like ``typing.Any`` inside a ``cast()``.
+# The AST walks the module, resolves which local names actually bind
+# to ``typing.Any``, and counts every reference regardless of surface
+# form.
+# -------------------------------------------------------------------
+
+def _collect_any_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """For one module AST, return:
+
+      * ``direct`` — names that directly refer to ``typing.Any``. Populated
+        by ``from typing import Any`` (key ``Any``) and by aliased forms
+        such as ``from typing import Any as X`` (key ``X``).
+      * ``module_aliases`` — names that refer to the ``typing`` module.
+        Populated by ``import typing`` (``typing``) and ``import typing
+        as t`` (``t``).
+    """
+    direct: set[str] = set()
+    module_aliases: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == 'typing':
+            for alias in node.names:
+                if alias.name == 'Any':
+                    direct.add(alias.asname or 'Any')
+        elif isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name == 'typing':
+                    module_aliases.add(alias.asname or 'typing')
+    return direct, module_aliases
+
+
+def _is_any_reference(
+    node: ast.AST,
+    direct: set[str],
+    module_aliases: set[str],
+) -> bool:
+    """True if ``node`` is a usage-site reference to ``typing.Any``.
+
+    Catches bare ``Any`` / aliased-direct names (``ast.Name``) and
+    attribute access like ``typing.Any`` / ``t.Any`` (``ast.Attribute``).
+    """
+    if isinstance(node, ast.Name):
+        return node.id in direct
+    if isinstance(node, ast.Attribute) and node.attr == 'Any':
+        target = node.value
+        return isinstance(target, ast.Name) and target.id in module_aliases
+    return False
+
+
+def count_any_references_ast(files: list[Path]) -> int:
+    """Count every reference to ``typing.Any`` across ``files``,
+    resolved through the module's own import / alias graph.
+
+    Includes: annotations (``x: Any``, ``-> Any``), generic-arg positions
+    (``list[Any]``, ``dict[str, Any]``), ``cast(Any, x)``, attribute
+    forms (``typing.Any``, ``t.Any``), aliased imports (``from typing
+    import Any as A`` → any use of ``A``), and every other site where
+    the resolved name is ``typing.Any``.
+
+    Excludes: strings containing the literal word ``Any``, comments,
+    and the ``alias.name`` field of the ``from typing import Any``
+    statement itself (not an ``ast.Name`` node).
+    """
+    total = 0
+    for f in files:
+        try:
+            text = f.read_text(encoding='utf-8')
+        except (OSError, UnicodeDecodeError) as exc:
+            raise SystemExit(f'typing_gate: cannot read {f}: {exc}') from exc
+        try:
+            tree = ast.parse(text, filename=str(f))
+        except SyntaxError as exc:
+            raise SystemExit(
+                f'typing_gate: cannot parse {f}: {exc}'
+            ) from exc
+
+        direct, module_aliases = _collect_any_bindings(tree)
+        if not direct and not module_aliases:
+            continue  # module has no way to refer to Any
+
+        for node in ast.walk(tree):
+            if _is_any_reference(node, direct, module_aliases):
+                total += 1
+
+    return total
+
+
+# -------------------------------------------------------------------
 # GATE 1 — pyright config must be strict and must ban explicit Any
 # -------------------------------------------------------------------
 
+# Required [tool.pyright] keys.
+#
+# Not listed: reportExplicitAny. pyright 1.1.408 (the pinned version)
+# emits `Config contains unrecognized setting "reportExplicitAny"` and
+# silently ignores it. We do not claim in this gate what the toolchain
+# does not actually enforce; the Any surface is enforced by the
+# AST-based gate_any_references_ast() below, which covers `Any`,
+# `typing.Any`, aliased imports (`from typing import Any as X`), and
+# module-qualified access (`import typing as t; t.Any`) -- all forms
+# the regex-based ratchet was blind to. The pyproject.toml still sets
+# reportExplicitAny = "error" as a forward-compatible aspirational
+# value for when pyright (or whatever we upgrade to) respects it.
 REQUIRED_PYRIGHT: Final[dict[str, object]] = {
     'typeCheckingMode': 'strict',
-    'reportExplicitAny': 'error',
     'reportMissingImports': 'error',
     'reportMissingTypeStubs': 'error',
     'reportUnknownArgumentType': 'error',
@@ -237,6 +341,52 @@ def gate_escape_hatch_ratchet(budget: dict[str, object]) -> list[str]:
             )
 
     return failures
+
+
+# -------------------------------------------------------------------
+# GATE 2b — AST-based Any-reference ratchet.
+# Catches every surface form of typing.Any, not just bare `Any`.
+# -------------------------------------------------------------------
+
+def gate_any_references_ast(budget: dict[str, object]) -> list[str]:
+    package_root_name = str(budget.get('package_root', ''))
+    if not package_root_name:
+        return ['typing_budget.json must set package_root']
+    package_root = REPO_ROOT / package_root_name
+    if not package_root.is_dir():
+        return [f'package_root {package_root_name!r} not found under repo root']
+
+    excludes_raw = budget.get('excludes', [])
+    excludes = [str(x) for x in excludes_raw] if isinstance(excludes_raw, list) else []
+    files = find_python_files(package_root, excludes)
+
+    spec = budget.get('any_references')
+    if not isinstance(spec, dict):
+        return [
+            'typing_budget.json must include an any_references section '
+            "with {'total': <int>}"
+        ]
+    raw_total = spec.get('total', 0)
+    if isinstance(raw_total, bool) or not isinstance(raw_total, int):
+        return [
+            f'typing_budget.json: any_references.total must be a '
+            f'non-negative integer (got {raw_total!r})'
+        ]
+    if raw_total < 0:
+        return [
+            f'typing_budget.json: any_references.total must be '
+            f'non-negative (got {raw_total})'
+        ]
+
+    current = count_any_references_ast(files)
+    if current > raw_total:
+        return [
+            f'any_references (AST): budget={raw_total} current={current} '
+            f'(delta={current - raw_total}). Covers Any, typing.Any, '
+            f't.Any, aliased imports. Remove the new Any or lower '
+            f'the budget.'
+        ]
+    return []
 
 
 # -------------------------------------------------------------------
@@ -379,12 +529,20 @@ def gate_budget_source(
 
     failures: list[str] = []
 
-    # Pyright error ceiling
-    base_py = base_budget.get('pyright_errors')
-    head_py = head_budget.get('pyright_errors')
-    if isinstance(base_py, dict) and isinstance(head_py, dict):
-        b_total = base_py.get('total', 0)
-        h_total = head_py.get('total', 0)
+    # Top-level integer-ceiling sections (pyright_errors, any_references).
+    for section in ('pyright_errors', 'any_references'):
+        base_sec = base_budget.get(section)
+        head_sec = head_budget.get(section)
+        if not isinstance(base_sec, dict):
+            continue
+        if not isinstance(head_sec, dict):
+            failures.append(
+                f'{section} section was deleted from the head budget. '
+                f'Keys present in the base-ref budget must be preserved.'
+            )
+            continue
+        b_total = base_sec.get('total', 0)
+        h_total = head_sec.get('total', 0)
         if (
             isinstance(b_total, int)
             and not isinstance(b_total, bool)
@@ -393,7 +551,7 @@ def gate_budget_source(
             and h_total > b_total
         ):
             failures.append(
-                f'pyright_errors.total was raised from {b_total} (base) '
+                f'{section}.total was raised from {b_total} (base) '
                 f'to {h_total} (head). The oracle cannot be weakened '
                 f'by the PR it gates.'
             )
@@ -514,12 +672,18 @@ def update_budget(pyright_json_path: str | None) -> None:
         budget = json.loads(BUDGET_PATH.read_text())
     else:
         budget = {
-            'schema_version': 1,
+            'schema_version': 2,
             'package_root': 'tdw_control_plane',
             'excludes': ['__pycache__', 'quickstart_etl_tests', 'build', 'dist'],
             'patterns': {k: dict(v) for k, v in DEFAULT_PATTERNS.items()},
+            'any_references': {'total': 0},
             'pyright_errors': {'total': 0},
         }
+
+    # Migrate schema v1 -> v2 (add any_references if missing)
+    if 'any_references' not in budget:
+        budget['any_references'] = {'total': 0}
+        budget['schema_version'] = 2
 
     package_root = REPO_ROOT / str(budget['package_root'])
     excludes = [str(x) for x in budget.get('excludes', [])]
@@ -527,6 +691,8 @@ def update_budget(pyright_json_path: str | None) -> None:
 
     for name, spec in budget['patterns'].items():
         spec['total'] = count_pattern(files, str(spec['pattern']))
+
+    budget['any_references']['total'] = count_any_references_ast(files)
 
     if pyright_json_path is not None:
         try:
@@ -540,10 +706,12 @@ def update_budget(pyright_json_path: str | None) -> None:
     BUDGET_PATH.write_text(json.dumps(budget, indent=2) + '\n')
 
     total_hatches = sum(int(s['total']) for s in budget['patterns'].values())
+    any_refs = int(budget['any_references']['total'])
     pyright_total = int(budget.get('pyright_errors', {}).get('total', 0))
     print(f'budget updated -> {BUDGET_PATH.relative_to(REPO_ROOT)}')
-    print(f'  escape-hatch occurrences: {total_hatches}')
-    print(f'  pyright errors:           {pyright_total}')
+    print(f'  regex escape-hatch occurrences: {total_hatches}')
+    print(f'  AST Any references:             {any_refs}')
+    print(f'  pyright errors:                 {pyright_total}')
 
 
 # -------------------------------------------------------------------
@@ -621,6 +789,9 @@ def main() -> int:
 
     for msg in gate_escape_hatch_ratchet(budget):
         failures.append(('escape-hatch-ratchet', msg))
+
+    for msg in gate_any_references_ast(budget):
+        failures.append(('any-references-ast-ratchet', msg))
 
     for msg in gate_pyright_errors(args.pyright_json, budget):
         failures.append(('pyright-error-ratchet', msg))
