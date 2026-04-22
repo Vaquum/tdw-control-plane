@@ -83,6 +83,10 @@
           {
             "context": "pr_checks_ruleset",
             "integration_id": 15368
+          },
+          {
+            "context": "pr_checks_lint",
+            "integration_id": 15368
           }
         ]
       }

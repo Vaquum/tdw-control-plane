@@ -348,11 +348,12 @@ def gate(
     # Actual violation count vs head budget.
     root_name = budget_head.get('package_root')
     if not isinstance(root_name, str) or not root_name:
-        return failures + ['fail_loud_gate: budget must set `package_root`']
+        return [*failures, 'fail_loud_gate: budget must set `package_root`']
     package_root = REPO_ROOT / root_name
     if not package_root.is_dir():
-        return failures + [
-            f'fail_loud_gate: package_root {root_name!r} not found under repo root'
+        return [
+            *failures,
+            f'fail_loud_gate: package_root {root_name!r} not found under repo root',
         ]
     excludes = [str(x) for x in (budget_head.get('excludes') or [])]
     files = find_python_files(package_root, excludes)

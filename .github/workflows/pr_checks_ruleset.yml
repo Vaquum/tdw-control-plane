@@ -22,11 +22,14 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install test dependency
-        run: python -m pip install --upgrade pip pytest
+      - name: Set up contract venv
+        run: python -m venv .venv-ruleset
+
+      - name: Install contract dependencies
+        run: .venv-ruleset/bin/python -m pip install --upgrade pip pytest 'ruff==0.15.11'
 
       - name: Run CI contract tests
-        run: pytest tests/tools/test_cc_gate.py tests/tools/test_ruleset_gate.py tests/tools/test_ci_contract.py -q
+        run: .venv-ruleset/bin/python -m pytest tests/tools/test_cc_gate.py tests/tools/test_ruleset_gate.py tests/tools/test_ci_contract.py tests/tools/test_lint_ci_contract.py -q
 
       - name: Compare live ruleset to checked-in snapshot
         env:
