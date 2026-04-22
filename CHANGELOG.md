@@ -1,3 +1,8 @@
+# v1.3.3 on April 22, 2026
+- Add `.github/workflows/pr_checks_lint.yml` so `tools` and `tests/tools` gain a required fail-loud Ruff gate on `main`, pinned to Ruff `0.15.11`.
+- Extend `pr_checks_ruleset` with `tests/tools/test_lint_ci_contract.py` and a pinned Ruff install so the lint gate itself is mechanically protected by required CI.
+- Remove dead Ruff ignores `ANN101` and `ANN102`, add exact `BLE001` exemptions for `tools/slice_gate.py` and `tools/typing_gate.py`, and replace the remaining `RUF005` list concatenations in `tools/fail_loud_gate.py`.
+
 # v1.3.2 on April 22, 2026
 - Add `.github/rulesets/main.json`, `tools/ruleset_gate.py`, `pr_checks_ruleset`, and fixture-backed ruleset drift tests so `main` can ratchet its required PR-path contexts against a checked-in snapshot.
 - Fix `tools/cc_gate.py` so linked-issue title lookup failures raise a hard setup error instead of silently skipping Conventional Commits validation.
