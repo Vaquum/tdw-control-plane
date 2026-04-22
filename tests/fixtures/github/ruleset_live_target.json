@@ -81,6 +81,10 @@
           {
             "context": "pr_checks_lint",
             "integration_id": 15368
+          },
+          {
+            "context": "pr_checks_tests",
+            "integration_id": 15368
           }
         ]
       }

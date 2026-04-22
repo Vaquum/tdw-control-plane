@@ -1,4 +1,4 @@
-FROM python:3.10.20
+FROM python:3.11.12
 
 ENV PIP_DEFAULT_TIMEOUT=100
 

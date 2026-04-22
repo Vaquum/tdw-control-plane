@@ -1,110 +1,81 @@
 import os
-from clickhouse_driver import Client as ClickhouseClient
-from dagster import asset, AssetExecutionContext
+from dataclasses import dataclass
 
-CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
-CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
-CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = os.environ["CLICKHOUSE_PASSWORD"]
-CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "origo")
+from clickhouse_driver import Client as ClickhouseClient
+from dagster import AssetExecutionContext, asset
+
+DEFAULT_CLICKHOUSE_HOST = 'clickhouse'
+DEFAULT_CLICKHOUSE_PORT = 9000
+DEFAULT_CLICKHOUSE_USER = 'default'
+
+
+@dataclass(frozen=True)
+class ClickHouseSettings:
+    host: str
+    port: int
+    user: str
+    password: str
+    database: str
+
+
+def _require_env(name: str) -> str:
+    value = os.environ.get(name)
+    if not value:
+        raise RuntimeError(f'{name} environment variable must be set.')
+    return value
+
+
+def _get_clickhouse_port() -> int:
+    value = os.environ.get('CLICKHOUSE_PORT', str(DEFAULT_CLICKHOUSE_PORT))
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError('CLICKHOUSE_PORT environment variable must be an integer.') from exc
+
+
+def _get_clickhouse_settings() -> ClickHouseSettings:
+    return ClickHouseSettings(
+        host=os.environ.get('CLICKHOUSE_HOST', DEFAULT_CLICKHOUSE_HOST),
+        port=_get_clickhouse_port(),
+        user=os.environ.get('CLICKHOUSE_USER', DEFAULT_CLICKHOUSE_USER),
+        password=_require_env('CLICKHOUSE_PASSWORD'),
+        database=os.environ.get('CLICKHOUSE_DATABASE', 'origo'),
+    )
+
+
+def _make_clickhouse_client(settings: ClickHouseSettings) -> ClickhouseClient:
+    return ClickhouseClient(
+        host=settings.host,
+        port=settings.port,
+        user=settings.user,
+        password=settings.password,
+    )
 
 
 @asset(
-    group_name="origo_setup",
-    description="Creates the origo database with optimal settings for exchange data",
+    group_name='origo_setup',
+    description='Creates the origo database if it does not already exist',
 )
-def create_origo_database(context: AssetExecutionContext):
-    """
-    Creates a ClickHouse database optimized for high-performance exchange data analytics.
-    """
-    client = None
+def create_origo_database(context: AssetExecutionContext) -> dict[str, object]:
+    settings = _get_clickhouse_settings()
+    client = _make_clickhouse_client(settings)
+
     try:
-        # Connect to ClickHouse
-        client = ClickhouseClient(
-            host=CLICKHOUSE_HOST,
-            port=CLICKHOUSE_PORT,
-            user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD,
-        )
-
-        # Check if database exists
-        result = client.execute(f"SHOW DATABASES LIKE '{CLICKHOUSE_DATABASE}'")
-        if not result:
-            # Create the database with optimal settings
-            client.execute(f"""
-                CREATE DATABASE IF NOT EXISTS {CLICKHOUSE_DATABASE}
-                ENGINE = Atomic
-            """)
-
-            # Set optimal database-level settings for exchange data workloads
-            settings = [
-                # Storage optimization
-                (
-                    "max_partitions_per_insert_block",
-                    "1000",
-                ),  # Allow many partitions in a single insert
-                # Query performance
-                (
-                    "max_threads",
-                    "16",
-                ),  # Adjust based on server CPU cores for query parallelism
-                ("max_memory_usage", "20000000000"),  # 20GB max memory per query
-                # Optimizations for time-series data
-                (
-                    "allow_experimental_lightweight_delete",
-                    "1",
-                ),  # Enable lightweight deletes for time-series data
-                ("max_insert_block_size", "1048576"),  # Larger blocks for bulk inserts
-                (
-                    "min_insert_block_size_rows",
-                    "1000000",
-                ),  # Minimum size for insert blocks
-                ("min_insert_block_size_bytes", "100000000"),  # 100MB minimum size
-                # Query optimization
-                ("optimize_on_insert", "1"),  # Optimize data on insert
-                ("enable_unaligned_array_join", "1"),  # Better array join performance
-                # Disable expensive operations
-                (
-                    "allow_suspicious_low_cardinality_types",
-                    "0",
-                ),  # Avoid inefficient column types
-                (
-                    "optimize_skip_unused_shards",
-                    "1",
-                ),  # Skip shards when possible in distributed queries
-                # Cache settings
-                ("mark_cache_size", "5368709120"),  # 5GB mark cache for faster reads
-                ("use_query_cache", "1"),  # Enable query cache
-            ]
-
-            # Apply settings at the database level where possible
-            for setting, value in settings:
-                try:
-                    client.execute(f"""
-                        ALTER DATABASE {CLICKHOUSE_DATABASE} 
-                        MODIFY SETTING {setting} = {value}
-                    """)
-                except Exception as e:
-                    # Some settings may not be applicable at database level
-                    context.log.warning(
-                        f"Could not set {setting}={value} at database level: {str(e)}"
-                    )
-
-            return {"database_created": True, "database_name": CLICKHOUSE_DATABASE}
-        else:
+        result = client.execute(f"SHOW DATABASES LIKE '{settings.database}'")
+        if result:
             return {
-                "database_created": False,
-                "database_name": CLICKHOUSE_DATABASE,
-                "message": "Database already exists",
+                'database_created': False,
+                'database_name': settings.database,
+                'message': 'Database already exists',
             }
 
-    except Exception as e:
-        raise e
+        client.execute(
+            f"""
+            CREATE DATABASE IF NOT EXISTS {settings.database}
+            ENGINE = Atomic
+            """
+        )
+        context.log.info(f'Created database {settings.database}.')
+        return {'database_created': True, 'database_name': settings.database}
     finally:
-        # Ensure client is disconnected
-        if client:
-            try:
-                client.disconnect()
-            except Exception as e:
-                context.log.warning(f"Error disconnecting from ClickHouse: {str(e)}")
-                pass
+        client.disconnect()

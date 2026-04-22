@@ -1,3 +1,9 @@
+# v1.4.0 on April 22, 2026
+- Move the runtime image to Python `3.11.12` so Docker matches the package and CI interpreter contract.
+- Replace the Origo path with a daily-source-native Binance spot trades template: idempotent `create_origo_database`, idempotent `create_binance_daily_spot_trades_table_origo`, and fail-loud `insert_daily_binance_spot_trades_to_origo`.
+- Rename the Origo raw table surface to `binance_daily_spot_trades`, add the companion `binance_daily_spot_trades_ingestion` ledger, preserve source timestamps with `DateTime64(6)`, and record Dagster run metadata plus source checksums/counts per ingested daily file.
+- Add `.github/workflows/pr_checks_tests.yml`, the ClickHouse-backed `tests/origo_source_native` suite, fixture-backed Binance daily archives plus `.CHECKSUM` files, and the checked-in ruleset snapshot change that requires `pr_checks_tests` on `main`.
+
 # v1.3.3 on April 22, 2026
 - Add `.github/workflows/pr_checks_lint.yml` so `tools` and `tests/tools` gain a required fail-loud Ruff gate on `main`, pinned to Ruff `0.15.11`.
 - Extend `pr_checks_ruleset` with `tests/tools/test_lint_ci_contract.py` and a pinned Ruff install so the lint gate itself is mechanically protected by required CI.

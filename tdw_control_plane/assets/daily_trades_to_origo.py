@@ -1,128 +1,76 @@
-import os
 import csv
-import requests
-import zipfile
 import hashlib
-from datetime import datetime, timedelta
+import os
+import zipfile
+from datetime import date, datetime, timedelta, timezone
 from io import BytesIO
+
+import requests
 from clickhouse_driver import Client as ClickhouseClient
-from dagster import asset, DailyPartitionsDefinition
+from dagster import AssetExecutionContext, DailyPartitionsDefinition, asset
 
-# Configure Clickhouse connection
-CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "37.27.112.187")
-CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
-CLICKHOUSE_USER = os.environ.get("CLICKHOUSE_USER", "default")
-CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD", "")
-CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "origo")
-CLICKHOUSE_TABLE = os.environ.get("CLICKHOUSE_TABLE", "binance_trades")
-
-daily_partitions = DailyPartitionsDefinition(start_date="2017-08-17")
-
-
-@asset(
-    partitions_def=daily_partitions,
-    group_name="binance_data",
-    description="Downloads, validates, extracts, and loads Binance BTC trade data into Clickhouse",
+from .create_binance_trades_table_origo import (
+    LEDGER_TABLE_NAME,
+    RAW_TABLE_NAME,
+    create_binance_daily_spot_trades_table_origo,
 )
-def insert_daily_binance_trades_to_origo(context):
-    # Get the selected partition key (YYYY-MM-DD format)
-    partition_date_str = context.asset_partition_key_for_output()
+from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_client
 
-    if partition_date_str is None:
-        # If no partition specified, default to yesterday
-        target_date = datetime.now() - timedelta(days=1)
-        date_str = target_date.strftime("%Y-%m-%d")
-    else:
-        # Use the partition date
-        date_str = partition_date_str
+daily_partitions = DailyPartitionsDefinition(start_date='2017-08-17')
 
-    # Generate the day string for the selected partition
-    day_str = f"BTCUSDT-trades-{date_str}.zip"
-    context.log.info(
-        f"Processing selected partition: {partition_date_str}, file: {day_str}"
+
+def _get_daily_spot_trades_base_url() -> str:
+    return os.environ.get(
+        'BINANCE_SPOT_DAILY_TRADES_BASE_URL',
+        'https://data.binance.vision/data/spot/daily/trades/BTCUSDT/',
     )
 
-    # Process only the selected day
-    result = _process_day(context, day_str, date_str)
 
-    return result
-
-
-def _process_day(context, day_str, date_str):
-    base_url = "https://data.binance.vision/data/spot/daily/trades/BTCUSDT/"
-    file_url = base_url + day_str
-    checksum_url = file_url + ".CHECKSUM"
-
-    # Download and verify checksum
-    context.log.info(f"Downloading checksum from {checksum_url}")
-    checksum_response = requests.get(checksum_url)
-    checksum_response.raise_for_status()
-
-    # Use index 0 for the hash (format: "hash filename")
-    expected_checksum = checksum_response.text.split()[0].strip()
-    context.log.info(f"Expected checksum: {expected_checksum}")
-
-    context.log.info(f"Downloading trade data from {file_url}")
-    response = requests.get(file_url)
+def _download_bytes(url: str) -> bytes:
+    response = requests.get(url, timeout=60)
     response.raise_for_status()
-    zip_data = response.content
-    context.log.info(f"Downloaded {len(zip_data) / 1024 / 1024:.2f} MB of data")
+    return response.content
 
-    actual_checksum = hashlib.sha256(zip_data).hexdigest()
-    context.log.info(f"Actual checksum: {actual_checksum}")
-    if actual_checksum != expected_checksum:
-        context.log.error(
-            f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
+
+def _download_text(url: str) -> str:
+    response = requests.get(url, timeout=60)
+    response.raise_for_status()
+    return response.text
+
+
+def _datetime_from_timestamp(timestamp: int) -> datetime:
+    timestamp_length = len(str(timestamp))
+    if timestamp_length == 13:
+        return datetime.fromtimestamp(timestamp / 1000.0, tz=timezone.utc).replace(
+            tzinfo=None
         )
-        raise ValueError(
-            f"Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}"
+    if timestamp_length == 16:
+        return datetime.fromtimestamp(timestamp / 1000000.0, tz=timezone.utc).replace(
+            tzinfo=None
         )
+    raise ValueError(f'Invalid timestamp length: {timestamp}')
 
-    csv_content = None
-    csv_filename = None
 
-    # Extract CSV from zip file
-    context.log.info("Extracting CSV from zip file")
+def _extract_csv(zip_data: bytes) -> tuple[str, bytes]:
     with zipfile.ZipFile(BytesIO(zip_data)) as zip_ref:
         csv_filename = zip_ref.namelist()[0]
-        context.log.info(f"Found CSV file: {csv_filename}")
-
         with zip_ref.open(csv_filename) as csv_file:
-            csv_content = csv_file.read()
+            return csv_filename, csv_file.read()
 
-    # Calculate CSV checksum
-    csv_checksum = hashlib.sha256(csv_content).hexdigest()
-    context.log.info(f"CSV checksum: {csv_checksum}")
 
-    # Parse CSV data
-    context.log.info("Parsing CSV data")
-    data = []
+def _parse_trade_rows(csv_content: bytes) -> list[tuple[object, ...]]:
+    rows: list[tuple[object, ...]] = []
+    reader = csv.reader(csv_content.decode('utf-8').splitlines())
 
-    csv_text = csv_content.decode("utf-8")
-    reader = csv.reader(csv_text.splitlines())
-
-    row_count = 0
     for row in reader:
-        row_count += 1
         trade_id = int(row[0])
         price = float(row[1])
         quantity = float(row[2])
         quote_quantity = float(row[3])
         timestamp = int(row[4])
-        is_buyer_maker = row[5].lower() == "true"
-        is_best_match = row[6].lower() == "true"
-
-        # Binance started with milliseconds, then switched to microseconds
-        if len(str(timestamp)) == 13:
-            dt = datetime.fromtimestamp(timestamp / 1000.0)
-
-        elif len(str(timestamp)) == 16:
-            dt = datetime.fromtimestamp(timestamp / 1000000.0)
-
-        else:
-            raise ValueError(f"Invalid timestamp length: {timestamp}")
-
-        data.append(
+        is_buyer_maker = row[5].lower() == 'true'
+        is_best_match = row[6].lower() == 'true'
+        rows.append(
             (
                 trade_id,
                 price,
@@ -131,61 +79,142 @@ def _process_day(context, day_str, date_str):
                 timestamp,
                 is_buyer_maker,
                 is_best_match,
-                dt,
+                _datetime_from_timestamp(timestamp),
             )
         )
 
-    context.log.info(f"Parsed {row_count} rows from CSV")
+    return rows
 
-    # Clear large variables to help garbage collection
-    csv_text = None
-    csv_content = None
-    zip_data = None
 
-    context.log.info(f"Day date: {date_str}")
+def _delete_partition_rows(
+    client: ClickhouseClient,
+    database: str,
+    table_name: str,
+    date_str: str,
+) -> None:
+    client.execute(
+        f"""
+        ALTER TABLE {database}.{table_name}
+        DELETE WHERE toDate(datetime) = toDate('{date_str}')
+        """,
+        settings={'mutations_sync': 2},
+    )
 
-    # Connect to ClickHouse
-    client = None
+
+def _delete_ledger_row(
+    client: ClickhouseClient,
+    database: str,
+    source_date: str,
+    source_file: str,
+) -> None:
+    client.execute(
+        f"""
+        ALTER TABLE {database}.{LEDGER_TABLE_NAME}
+        DELETE WHERE source_date = toDate('{source_date}')
+          AND source_file = '{source_file}'
+        """,
+        settings={'mutations_sync': 2},
+    )
+
+
+def _count_rows_for_day(client: ClickhouseClient, database: str, date_str: str) -> int:
+    result = client.execute(
+        f"""
+        SELECT count(*)
+        FROM {database}.{RAW_TABLE_NAME}
+        WHERE toDate(datetime) = toDate('{date_str}')
+        """
+    )
+    return int(result[0][0])
+
+
+def _write_ingestion_ledger(
+    client: ClickhouseClient,
+    database: str,
+    *,
+    source_date: str,
+    source_file: str,
+    dagster_run_id: str,
+    dagster_partition_key: str,
+    zip_checksum: str,
+    csv_checksum: str,
+    source_row_count: int,
+    inserted_row_count: int,
+) -> None:
+    _delete_ledger_row(client, database, source_date, source_file)
+    client.execute(
+        f"""
+        INSERT INTO {database}.{LEDGER_TABLE_NAME}
+        (
+            source_date,
+            source_file,
+            dagster_run_id,
+            dagster_partition_key,
+            zip_checksum,
+            csv_checksum,
+            source_row_count,
+            inserted_row_count,
+            loaded_at,
+            status
+        ) VALUES
+        """,
+        [
+            (
+                date.fromisoformat(source_date),
+                source_file,
+                dagster_run_id,
+                dagster_partition_key,
+                zip_checksum,
+                csv_checksum,
+                source_row_count,
+                inserted_row_count,
+                datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0),
+                'success',
+            )
+        ],
+    )
+
+
+def _process_day(
+    context: AssetExecutionContext,
+    *,
+    day_filename: str,
+    date_str: str,
+) -> dict[str, object]:
+    base_url = _get_daily_spot_trades_base_url()
+    file_url = f'{base_url}{day_filename}'
+    checksum_url = f'{file_url}.CHECKSUM'
+
+    context.log.info(f'Downloading checksum from {checksum_url}')
+    checksum_text = _download_text(checksum_url)
+    expected_checksum = checksum_text.split()[0].strip()
+
+    context.log.info(f'Downloading trade data from {file_url}')
+    zip_data = _download_bytes(file_url)
+    actual_checksum = hashlib.sha256(zip_data).hexdigest()
+    if actual_checksum != expected_checksum:
+        raise ValueError(
+            f'Checksum mismatch! Expected: {expected_checksum}, Actual: {actual_checksum}'
+        )
+
+    csv_filename, csv_content = _extract_csv(zip_data)
+    csv_checksum = hashlib.sha256(csv_content).hexdigest()
+    rows = _parse_trade_rows(csv_content)
+
+    settings = _get_clickhouse_settings()
+    client = _make_clickhouse_client(settings)
+
     try:
-        context.log.info(
-            f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}"
-        )
-        client = ClickhouseClient(
-            host=CLICKHOUSE_HOST,
-            port=CLICKHOUSE_PORT,
-            user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD,
-            database=CLICKHOUSE_DATABASE,
-            compression=True,
-            send_receive_timeout=900,
-        )
-
-        # Check if data already exists for this day
-        context.log.info(f"Checking for existing data for {date_str}")
-        check_result = client.execute(f"""
-            SELECT count(*)
-            FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
-            WHERE toDate(datetime) = toDate('{date_str}')
-        """)
-
-        existing_count = check_result[0][0]
-
-        # If data exists, delete it before inserting new data
+        existing_count = _count_rows_for_day(client, settings.database, date_str)
         if existing_count > 0:
             context.log.info(
-                f"Found {existing_count} existing records for {date_str}. Deleting before reinserting."
+                f'Found {existing_count} existing rows for {date_str}. Replacing that day.'
             )
-            client.execute(f"""
-                ALTER TABLE {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
-                DELETE WHERE toDate(datetime) = toDate('{date_str}')
-            """)
-            context.log.info(f"Deleted existing data for {date_str}")
+            _delete_partition_rows(client, settings.database, RAW_TABLE_NAME, date_str)
 
-        # Insert data
-        context.log.info(f"Inserting {len(data)} rows into ClickHouse")
         client.execute(
             f"""
-            INSERT INTO {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
+            INSERT INTO {settings.database}.{RAW_TABLE_NAME}
             (
                 trade_id,
                 price,
@@ -198,68 +227,58 @@ def _process_day(context, day_str, date_str):
             ) SETTINGS async_insert=1, wait_for_async_insert=1
             VALUES
             """,
-            data,
-            settings={"max_execution_time": 900},
+            rows,
+            settings={'max_execution_time': 900},
         )
-        context.log.info("Data insertion completed")
 
-        # Verify insertion
-        context.log.info("Verifying data insertion")
-        result = client.execute(f"""
-            SELECT count(*)
-            FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
-            WHERE toDate(datetime) = toDate('{date_str}')
-        """)
-        inserted_count = result[0][0]
-        context.log.info(f"Found {inserted_count} rows in ClickHouse after insertion")
-
-        # Get quick stats instead of expensive hash
-        context.log.info("Computing verification statistics")
-        stats_result = client.execute(f"""
-            SELECT
-                min(trade_id),
-                max(trade_id),
-                avg(price),
-                count(distinct trade_id) % 1000 -- lightweight uniqueness check (modulo to keep it small)
-            FROM {CLICKHOUSE_DATABASE}.{CLICKHOUSE_TABLE}
-            WHERE toDate(datetime) = toDate('{date_str}')
-        """)
-
-        data_verification = {
-            "min_trade_id": stats_result[0][0],
-            "max_trade_id": stats_result[0][1],
-            "avg_price": stats_result[0][2],
-            "id_uniqueness_check": stats_result[0][3],
-        }
-        context.log.info(f"Data verification stats: {data_verification}")
-
-        if inserted_count != len(data):
-            context.log.error(
-                f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}"
-            )
+        inserted_count = _count_rows_for_day(client, settings.database, date_str)
+        if inserted_count != len(rows):
             raise ValueError(
-                f"Row count mismatch! Expected: {len(data)}, Actual: {inserted_count}"
+                f'Row count mismatch! Expected: {len(rows)}, Actual: {inserted_count}'
             )
 
-        result_data = {
-            "date": day_str,
-            "rows_inserted": inserted_count,
-            "zip_checksum": actual_checksum,
-            "csv_checksum": csv_checksum,
-            "data_verification": data_verification,
+        partition_key = context.partition_key or date_str
+        _write_ingestion_ledger(
+            client,
+            settings.database,
+            source_date=date_str,
+            source_file=day_filename,
+            dagster_run_id=context.run.run_id,
+            dagster_partition_key=partition_key,
+            zip_checksum=actual_checksum,
+            csv_checksum=csv_checksum,
+            source_row_count=len(rows),
+            inserted_row_count=inserted_count,
+        )
+
+        return {
+            'date': day_filename,
+            'rows_inserted': inserted_count,
+            'zip_checksum': actual_checksum,
+            'csv_checksum': csv_checksum,
+            'source_file': day_filename,
+            'csv_file': csv_filename,
         }
-
-        context.log.info(f"Successfully processed {day_str}")
-        return result_data
-
-    except Exception as e:
-        raise e
     finally:
-        # Ensure client is disconnected and resources are cleaned up
-        if client:
-            try:
-                client.disconnect()
-            except:
-                pass
-        # Clear large variables to help garbage collection
-        data = None
+        client.disconnect()
+
+
+@asset(
+    partitions_def=daily_partitions,
+    deps=[create_binance_daily_spot_trades_table_origo],
+    group_name='binance_data',
+    description='Downloads, validates, extracts, and loads Binance BTCUSDT spot trade data into Origo',
+)
+def insert_daily_binance_spot_trades_to_origo(
+    context: AssetExecutionContext,
+) -> dict[str, object]:
+    partition_date_str = context.partition_key
+    if partition_date_str is None:
+        target_date = datetime.now(timezone.utc) - timedelta(days=1)
+        date_str = target_date.strftime('%Y-%m-%d')
+    else:
+        date_str = partition_date_str
+
+    day_filename = f'BTCUSDT-trades-{date_str}.zip'
+    context.log.info(f'Processing partition {date_str} using {day_filename}')
+    return _process_day(context, day_filename=day_filename, date_str=date_str)
