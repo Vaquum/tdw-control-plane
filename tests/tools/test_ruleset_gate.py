@@ -36,6 +36,13 @@ def test_matches_target_snapshot() -> None:
     assert 'RULESET GATE -- PASS' in result.stdout
 
 
+def test_missing_bypass_actors_is_allowed_for_repo_hosted_reads() -> None:
+    result = run_gate('ruleset_live_target_without_bypass_actors.json')
+    assert result.returncode == 0, result.stderr
+    assert 'comparing observable subset only' in result.stderr
+    assert 'RULESET GATE -- PASS' in result.stdout
+
+
 def test_bypass_actor_drift_is_failure() -> None:
     result = run_gate('ruleset_live_with_bypass_actor.json')
     assert result.returncode == 1

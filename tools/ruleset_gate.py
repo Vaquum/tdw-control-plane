@@ -10,14 +10,21 @@ import sys
 from pathlib import Path
 from typing import Any, Final
 
-SNAPSHOT_TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset({
-    'bypass_actors',
+REQUIRED_TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset({
     'name',
     'target',
     'enforcement',
     'conditions',
     'rules',
 })
+
+OPTIONAL_LIVE_TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset({
+    'bypass_actors',
+})
+
+SNAPSHOT_TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset(
+    REQUIRED_TOP_LEVEL_FIELDS | OPTIONAL_LIVE_TOP_LEVEL_FIELDS
+)
 
 IGNORED_LIVE_FIELDS: Final[frozenset[str]] = frozenset({
     '_links',
@@ -101,9 +108,37 @@ def load_live_ruleset(
     return payload
 
 
-def normalize_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]:
+def normalize_snapshot_ruleset(payload: dict[str, Any]) -> dict[str, Any]:
+    snapshot_fields = set(payload)
+    unexpected = snapshot_fields - SNAPSHOT_TOP_LEVEL_FIELDS
+    if unexpected:
+        raise SystemExit(
+            fail(
+                f'unexpected snapshot ruleset field(s): {sorted(unexpected)}',
+                code=2,
+            )
+        )
+
+    missing = SNAPSHOT_TOP_LEVEL_FIELDS - snapshot_fields
+    if missing:
+        raise SystemExit(
+            fail(
+                f'expected snapshot ruleset field(s) missing: {sorted(missing)}',
+                code=2,
+            )
+        )
+
+    return payload
+
+
+def normalize_live_ruleset(payload: dict[str, Any]) -> tuple[dict[str, Any], frozenset[str]]:
     live_fields = set(payload)
-    unexpected = live_fields - SNAPSHOT_TOP_LEVEL_FIELDS - IGNORED_LIVE_FIELDS
+    unexpected = (
+        live_fields
+        - REQUIRED_TOP_LEVEL_FIELDS
+        - OPTIONAL_LIVE_TOP_LEVEL_FIELDS
+        - IGNORED_LIVE_FIELDS
+    )
     if unexpected:
         raise SystemExit(
             fail(
@@ -112,7 +147,7 @@ def normalize_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]:
             )
         )
 
-    missing = SNAPSHOT_TOP_LEVEL_FIELDS - live_fields
+    missing = REQUIRED_TOP_LEVEL_FIELDS - live_fields
     if missing:
         raise SystemExit(
             fail(
@@ -121,7 +156,22 @@ def normalize_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]:
             )
         )
 
-    return {key: payload[key] for key in sorted(SNAPSHOT_TOP_LEVEL_FIELDS)}
+    comparable_fields = REQUIRED_TOP_LEVEL_FIELDS | (
+        OPTIONAL_LIVE_TOP_LEVEL_FIELDS & live_fields
+    )
+
+    missing_optional = OPTIONAL_LIVE_TOP_LEVEL_FIELDS - live_fields
+    if missing_optional:
+        print(
+            'ruleset_gate: live ruleset omitted non-observable field(s): '
+            f'{sorted(missing_optional)}; comparing observable subset only',
+            file=sys.stderr,
+        )
+
+    return (
+        {key: payload[key] for key in sorted(comparable_fields)},
+        frozenset(comparable_fields),
+    )
 
 
 def main() -> int:
@@ -132,14 +182,20 @@ def main() -> int:
     parser.add_argument('--live-json')
     args = parser.parse_args()
 
-    expected_ruleset = load_json_file(Path(args.ruleset_file))
-    live_ruleset = normalize_live_ruleset(
+    expected_ruleset = normalize_snapshot_ruleset(
+        load_json_file(Path(args.ruleset_file))
+    )
+    live_ruleset, compared_fields = normalize_live_ruleset(
         load_live_ruleset(
             repo=args.repo,
             ruleset_id=args.ruleset_id,
             live_json=args.live_json,
         )
     )
+    expected_ruleset = {
+        key: expected_ruleset[key]
+        for key in sorted(compared_fields)
+    }
 
     if live_ruleset != expected_ruleset:
         print('ruleset_gate: ruleset drift detected', file=sys.stderr)
