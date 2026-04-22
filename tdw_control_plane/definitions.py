@@ -26,7 +26,7 @@ from dagster import (
 from .assets.cleanup_binance_daily_trades import (
     cleanup_binance_daily_trades_for_finalized_month,
 )
-from .assets.daily_trades_to_origo import insert_daily_binance_trades_to_origo
+from .assets.daily_trades_to_origo import insert_daily_binance_spot_trades_to_origo
 from .assets.daily_trades_to_tdw import insert_daily_binance_trades_to_tdw
 from .assets.publish_binance_spot_klines_to_huggingface import (
     publish_binance_spot_klines_to_huggingface,
@@ -52,7 +52,9 @@ from .assets.monthly_futures_trades_to_tdw import insert_monthly_binance_futures
 from .assets.monthly_futures_agg_trades_to_tdw import create_binance_futures_agg_trades_table
 from .assets.monthly_futures_agg_trades_to_tdw import insert_monthly_binance_futures_agg_trades_to_tdw
 from .assets.create_origo_database import create_origo_database
-from .assets.create_binance_trades_table_origo import create_binance_trades_table_origo
+from .assets.create_binance_trades_table_origo import (
+    create_binance_daily_spot_trades_table_origo,
+)
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -82,9 +84,9 @@ create_binance_daily_trades_table_job = define_asset_job(
     name="create_binance_daily_trades_table_job",
     selection=["create_binance_daily_trades_table"])
 
-create_binance_trades_table_origo_job = define_asset_job(
-    name="create_binance_trades_table_origo_job",
-    selection=["create_binance_trades_table_origo"]
+create_binance_daily_spot_trades_table_origo_job = define_asset_job(
+    name="create_binance_daily_spot_trades_table_origo_job",
+    selection=["create_binance_daily_spot_trades_table_origo"]
 )
 
 create_binance_trades_complete_view_job = define_asset_job(
@@ -109,9 +111,9 @@ insert_monthly_binance_trades_job = define_asset_job(
     name="insert_monthly_trades_to_tdw_job",
     selection=["insert_monthly_binance_trades_to_tdw"])
 
-insert_daily_binance_trades_job = define_asset_job(
-    name="insert_daily_trades_to_origo_job",
-    selection=["insert_daily_binance_trades_to_origo"])
+insert_daily_binance_spot_trades_to_origo_job = define_asset_job(
+    name="insert_daily_binance_spot_trades_to_origo_job",
+    selection=["insert_daily_binance_spot_trades_to_origo"])
 
 insert_daily_binance_trades_tdw_job = define_asset_job(
     name="insert_daily_trades_to_tdw_job",
@@ -416,10 +418,10 @@ defs = Definitions(
             create_origo_database,
             create_binance_trades_table,
             create_binance_daily_trades_table,
-            create_binance_trades_table_origo,
+            create_binance_daily_spot_trades_table_origo,
             create_binance_trades_complete_view,
             insert_monthly_binance_trades_to_tdw,
-            insert_daily_binance_trades_to_origo,
+            insert_daily_binance_spot_trades_to_origo,
             insert_daily_binance_trades_to_tdw,
             publish_binance_spot_klines_to_huggingface,
             cleanup_binance_daily_trades_for_finalized_month,
@@ -451,10 +453,10 @@ defs = Definitions(
           create_origo_database_job,
           create_binance_trades_table_job,
           create_binance_daily_trades_table_job,
-          create_binance_trades_table_origo_job,
+          create_binance_daily_spot_trades_table_origo_job,
           create_binance_trades_complete_view_job,
           insert_monthly_binance_trades_job,
-          insert_daily_binance_trades_job,
+          insert_daily_binance_spot_trades_to_origo_job,
           insert_daily_binance_trades_tdw_job,
           publish_binance_spot_klines_to_huggingface_job,
           roll_forward_monthly_binance_trades_job,

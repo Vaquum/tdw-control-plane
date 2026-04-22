@@ -1,92 +1,116 @@
-import os
 from clickhouse_driver import Client as ClickhouseClient
-from dagster import asset, AssetExecutionContext
+from dagster import AssetExecutionContext, asset
 
-CLICKHOUSE_HOST = os.environ.get('CLICKHOUSE_HOST', 'clickhouse')
-CLICKHOUSE_PORT = int(os.environ.get('CLICKHOUSE_PORT', 9000))
-CLICKHOUSE_USER = os.environ.get('CLICKHOUSE_USER', 'default')
-CLICKHOUSE_PASSWORD = os.environ['CLICKHOUSE_PASSWORD']
-CLICKHOUSE_DATABASE = os.environ.get('CLICKHOUSE_DATABASE', 'origo')
+from .create_origo_database import (
+    ClickHouseSettings,
+    _get_clickhouse_settings,
+    _make_clickhouse_client,
+    create_origo_database,
+)
+
+RAW_TABLE_NAME = 'binance_daily_spot_trades'
+LEDGER_TABLE_NAME = 'binance_daily_spot_trades_ingestion'
+
+
+def _database_exists(client: ClickhouseClient, database: str) -> bool:
+    result = client.execute(
+        f"""
+        SELECT count()
+        FROM system.databases
+        WHERE name = '{database}'
+        """
+    )
+    return bool(result[0][0])
+
+
+def _table_exists(client: ClickhouseClient, settings: ClickHouseSettings, table_name: str) -> bool:
+    result = client.execute(
+        f"""
+        SELECT count()
+        FROM system.tables
+        WHERE database = '{settings.database}'
+          AND name = '{table_name}'
+        """
+    )
+    return bool(result[0][0])
+
+
+def _create_raw_table(client: ClickhouseClient, settings: ClickHouseSettings) -> None:
+    client.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {settings.database}.{RAW_TABLE_NAME} (
+            trade_id UInt64 CODEC(Delta(8), ZSTD(3)),
+            price Float64 CODEC(Delta, ZSTD(3)),
+            quantity Float64 CODEC(ZSTD(3)),
+            quote_quantity Float64 CODEC(ZSTD(3)),
+            timestamp UInt64 CODEC(Delta, ZSTD(3)),
+            is_buyer_maker UInt8 CODEC(ZSTD(1)),
+            is_best_match UInt8 CODEC(ZSTD(1)),
+            datetime DateTime64(6) CODEC(Delta, ZSTD(3))
+        )
+        ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(datetime)
+        ORDER BY (datetime, trade_id)
+        """
+    )
+
+
+def _create_ingestion_ledger(client: ClickhouseClient, settings: ClickHouseSettings) -> None:
+    client.execute(
+        f"""
+        CREATE TABLE IF NOT EXISTS {settings.database}.{LEDGER_TABLE_NAME} (
+            source_date Date,
+            source_file String,
+            dagster_run_id String,
+            dagster_partition_key String,
+            zip_checksum FixedString(64),
+            csv_checksum FixedString(64),
+            source_row_count UInt64,
+            inserted_row_count UInt64,
+            loaded_at DateTime,
+            status LowCardinality(String)
+        )
+        ENGINE = MergeTree()
+        PARTITION BY toYYYYMM(source_date)
+        ORDER BY (source_date, source_file)
+        """
+    )
+
 
 @asset(
     group_name='origo_setup',
-    description='Creates the binance_trades table with optimal settings for high-volume trade data'
+    deps=[create_origo_database],
+    description='Creates the binance_daily_spot_trades raw table and ingestion ledger if they do not exist',
 )
-def create_binance_trades_table_origo(context: AssetExecutionContext):
-    """
-    Creates a highly optimized ClickHouse table for Binance trades data.
-    """
-    client = None
+def create_binance_daily_spot_trades_table_origo(
+    context: AssetExecutionContext,
+) -> dict[str, object]:
+    settings = _get_clickhouse_settings()
+    client = _make_clickhouse_client(settings)
+
     try:
-        # Connect to ClickHouse
-        client = ClickhouseClient(
-            host=CLICKHOUSE_HOST,
-            port=CLICKHOUSE_PORT,
-            user=CLICKHOUSE_USER,
-            password=CLICKHOUSE_PASSWORD,
-            database=CLICKHOUSE_DATABASE
-        )
-        
-        # Check if the database exists
-        db_exists = client.execute(f"SELECT count() FROM system.databases WHERE name = '{CLICKHOUSE_DATABASE}'")
-        if not db_exists[0][0]:
-            context.log.error(f"Database {CLICKHOUSE_DATABASE} does not exist. Please create it first.")
-            return {"status": "error", "message": f"Database {CLICKHOUSE_DATABASE} does not exist"}
-        
-        # Check if the table already exists
-        table_exists = client.execute(f"SELECT count() FROM system.tables WHERE database = '{CLICKHOUSE_DATABASE}' AND name = 'binance_trades'")
-        was_dropped = False
-        
-        # If the table exists, drop it
-        if table_exists[0][0]:
-            context.log.info(f"Table {CLICKHOUSE_DATABASE}.binance_trades already exists. Dropping it...")
-            client.execute(f"DROP TABLE IF EXISTS {CLICKHOUSE_DATABASE}.binance_trades")
-            context.log.info(f"Table {CLICKHOUSE_DATABASE}.binance_trades has been dropped.")
-            was_dropped = True
-        
-        # Create the binance_trades table
-        context.log.info(f"Creating table {CLICKHOUSE_DATABASE}.binance_trades...")
-        client.execute(f"""
-            CREATE TABLE {CLICKHOUSE_DATABASE}.binance_trades (
-                trade_id        UInt64  CODEC(Delta(8), ZSTD(3)),
-                price           Float64 CODEC(Delta, ZSTD(3)),
-                quantity        Float64 CODEC(ZSTD(3)),
-                quote_quantity  Float64 CODEC(ZSTD(3)),
-                timestamp       UInt64  CODEC(Delta, ZSTD(3)),
-                is_buyer_maker  UInt8   CODEC(ZSTD(1)),
-                is_best_match   UInt8   CODEC(ZSTD(1)),
-                datetime        DateTime CODEC(Delta, ZSTD(3))
+        if not _database_exists(client, settings.database):
+            raise RuntimeError(
+                f'Database {settings.database} does not exist. Run create_origo_database first.'
             )
-            ENGINE = MergeTree()
-            PARTITION BY toYYYYMM(datetime)
-            ORDER BY (toStartOfDay(datetime), trade_id)
-            SAMPLE BY trade_id
-            SETTINGS 
-                index_granularity = 8192,
-                enable_mixed_granularity_parts = 1,
-                min_rows_for_wide_part = 1000000,
-                min_bytes_for_wide_part = 10000000,
-                min_rows_for_compact_part = 10000,
-                write_final_mark = 0,
-                optimize_on_insert = 1,
-                max_partitions_per_insert_block = 1000
-        """)
-        context.log.info(f"Table {CLICKHOUSE_DATABASE}.binance_trades has been created successfully.")
-        
+
+        raw_table_existed = _table_exists(client, settings, RAW_TABLE_NAME)
+        ledger_table_existed = _table_exists(client, settings, LEDGER_TABLE_NAME)
+
+        _create_raw_table(client, settings)
+        _create_ingestion_ledger(client, settings)
+
+        context.log.info(
+            f'Ensured tables {settings.database}.{RAW_TABLE_NAME} and '
+            f'{settings.database}.{LEDGER_TABLE_NAME} exist.'
+        )
+
         return {
-            "status": "success",
-            "table": f"{CLICKHOUSE_DATABASE}.binance_trades",
-            "action": "recreated" if was_dropped else "created"
+            'status': 'success',
+            'raw_table': f'{settings.database}.{RAW_TABLE_NAME}',
+            'ledger_table': f'{settings.database}.{LEDGER_TABLE_NAME}',
+            'raw_table_action': 'already_exists' if raw_table_existed else 'created',
+            'ledger_table_action': 'already_exists' if ledger_table_existed else 'created',
         }
-        
-    except Exception as e:
-        context.log.error(f"Error creating binance_trades table: {str(e)}")
-        return {"status": "error", "message": str(e)}
-        
     finally:
-        # Ensure client is disconnected
-        if client:
-            try:
-                client.disconnect()
-            except Exception as e:
-                context.log.warning(f"Error disconnecting from ClickHouse: {str(e)}") 
+        client.disconnect()
