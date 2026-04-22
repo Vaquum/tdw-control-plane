@@ -17,12 +17,22 @@ RUFF_VERSION: Final[str] = '0.15.11'
 
 
 def _required_status_contexts() -> list[str]:
-    payload = json.loads(RULESET_SNAPSHOT.read_text(encoding="utf-8"))
+    payload = json.loads(RULESET_SNAPSHOT.read_text(encoding='utf-8'))
     for rule in payload['rules']:
         if rule['type'] == 'required_status_checks':
             checks = rule['parameters']['required_status_checks']
             return [entry['context'] for entry in checks]
     raise AssertionError('required_status_checks rule missing from ruleset snapshot')
+
+
+def _run_ruff(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, '-m', 'ruff', *args],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=REPO_ROOT,
+    )
 
 
 def test_pr_checks_lint_workflow_exists() -> None:
@@ -49,13 +59,11 @@ def test_pr_checks_ruleset_runs_test_lint_ci_contract() -> None:
 
 
 def test_pinned_ruff_fails_on_known_bad_fixture() -> None:
-    result = subprocess.run(
-        [sys.executable, '-m', 'ruff', 'check', str(BAD_FIXTURE)],
-        check=False,
-        capture_output=True,
-        text=True,
-        cwd=REPO_ROOT,
-    )
+    version = _run_ruff('--version')
+    assert version.returncode == 0, version.stderr
+    assert version.stdout.strip() == f'ruff {RUFF_VERSION}'
+
+    result = _run_ruff('check', str(BAD_FIXTURE))
 
     assert result.returncode == 1
     assert 'bad_imports.py' in f'{result.stdout}\n{result.stderr}'
@@ -77,5 +85,9 @@ def test_pyproject_ruff_ignore_contract() -> None:
     lint = data['tool']['ruff']['lint']
 
     assert sorted(lint['ignore']) == ['E501']
-    assert lint['per-file-ignores']['tools/slice_gate.py'] == ['BLE001']
-    assert lint['per-file-ignores']['tools/typing_gate.py'] == ['BLE001']
+    assert 'tools/slice_gate.py' not in lint['per-file-ignores']
+    assert 'tools/typing_gate.py' not in lint['per-file-ignores']
+
+    for path in ('tools/slice_gate.py', 'tools/typing_gate.py'):
+        result = _run_ruff('check', '--isolated', '--select', 'BLE001', path)
+        assert result.returncode == 0, result.stdout + result.stderr

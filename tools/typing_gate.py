@@ -863,8 +863,17 @@ def update_budget(pyright_json_path: str | None) -> None:
 # -------------------------------------------------------------------
 
 def load_pyproject() -> dict[str, object]:
-    with open(PYPROJECT_PATH, 'rb') as f:
-        return tomllib.load(f)
+    try:
+        with open(PYPROJECT_PATH, 'rb') as f:
+            return tomllib.load(f)
+    except OSError as exc:
+        raise SystemExit(
+            f'typing gate cannot read {PYPROJECT_PATH.relative_to(REPO_ROOT)}: {exc}'
+        ) from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise SystemExit(
+            f'typing gate cannot parse {PYPROJECT_PATH.relative_to(REPO_ROOT)}: {exc}'
+        ) from exc
 
 
 def load_budget() -> dict[str, object]:
@@ -873,7 +882,16 @@ def load_budget() -> dict[str, object]:
             f'typing gate cannot run: {BUDGET_PATH.relative_to(REPO_ROOT)} '
             f'is missing. Run with --update-budget to create it.'
         )
-    return json.loads(BUDGET_PATH.read_text())
+    try:
+        return json.loads(BUDGET_PATH.read_text(encoding='utf-8'))
+    except OSError as exc:
+        raise SystemExit(
+            f'typing gate cannot read {BUDGET_PATH.relative_to(REPO_ROOT)}: {exc}'
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise SystemExit(
+            f'typing gate cannot parse {BUDGET_PATH.relative_to(REPO_ROOT)}: {exc}'
+        ) from exc
 
 
 def main() -> int:
@@ -937,14 +955,8 @@ def main() -> int:
         )
         return 1
 
-    try:
-        config = load_pyproject()
-        budget = load_budget()
-    except SystemExit:
-        raise
-    except Exception as e:
-        print(f'typing gate setup failed: {e}', file=sys.stderr)
-        return 2
+    config = load_pyproject()
+    budget = load_budget()
 
     failures: list[tuple[str, str]] = []
 

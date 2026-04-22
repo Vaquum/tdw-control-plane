@@ -194,9 +194,11 @@ def read_lines(path: Path) -> list[str]:
     try:
         text = path.read_text(encoding='utf-8')
     except OSError as exc:
-        raise SystemExit(
-            f'slice_gate: cannot read {path}: {exc}'
-        ) from exc
+        print(
+            f'slice_gate: cannot read {path}: {exc}',
+            file=sys.stderr,
+        )
+        raise SystemExit(2) from exc
     return [line for line in text.splitlines() if line.strip()]
 
 
@@ -432,16 +434,7 @@ def main() -> int:
         )
         return 2
 
-    try:
-        pr_files = read_lines(Path(args.pr_files_file))
-    except SystemExit:
-        raise
-    except Exception as exc:
-        print(
-            f'slice_gate: cannot read --pr-files-file {args.pr_files_file}: {exc}',
-            file=sys.stderr,
-        )
-        return 2
+    pr_files = read_lines(Path(args.pr_files_file))
 
     template_path = Path(args.template)
     if not template_path.is_file():
