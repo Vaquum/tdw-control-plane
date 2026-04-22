@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -52,6 +53,33 @@ def test_unexpected_top_level_field_in_live_is_drift() -> None:
     result = run_gate('ruleset_live_unexpected_field.json')
     assert result.returncode == 1
     assert 'unexpected live ruleset field(s)' in result.stderr
+
+
+def test_unexpected_field_fixture_preserves_required_contexts() -> None:
+    snapshot = json.loads(SNAPSHOT.read_text(encoding='utf-8'))
+    unexpected = json.loads((FIXTURES / 'ruleset_live_unexpected_field.json').read_text(encoding='utf-8'))
+
+    def required_contexts(payload: dict[str, object]) -> list[str]:
+        rules = payload['rules']
+        assert isinstance(rules, list)
+        for rule in rules:
+            assert isinstance(rule, dict)
+            if rule.get('type') == 'required_status_checks':
+                parameters = rule['parameters']
+                assert isinstance(parameters, dict)
+                required_status_checks = parameters['required_status_checks']
+                assert isinstance(required_status_checks, list)
+                return [
+                    entry['context']
+                    for entry in required_status_checks
+                    if isinstance(entry, dict)
+                ]
+        raise AssertionError('required_status_checks rule not found')
+
+    snapshot_contexts = required_contexts(snapshot)
+    unexpected_contexts = required_contexts(unexpected)
+
+    assert unexpected_contexts == snapshot_contexts
 
 
 def test_ignored_live_fields_match_named_set() -> None:
