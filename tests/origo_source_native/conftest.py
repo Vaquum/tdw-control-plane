@@ -37,7 +37,7 @@ from tdw_control_plane.assets.daily_trades_to_origo import (
     insert_daily_binance_spot_trades_to_origo,
 )
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[2]
 BINANCE_FIXTURE_ROOT = REPO_ROOT / 'tests' / 'fixtures' / 'binance'
 CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:24.3'
 ORIGO_DATABASE = 'origo'
