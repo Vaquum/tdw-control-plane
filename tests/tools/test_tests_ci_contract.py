@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 TESTS_WORKFLOW = REPO_ROOT / '.github/workflows/pr_checks_tests.yml'
 EXPECTED_TEST_COMMAND = 'pytest tests/origo_source_native -q --maxfail=1'
