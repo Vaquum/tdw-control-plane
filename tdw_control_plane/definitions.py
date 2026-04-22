@@ -301,7 +301,7 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
 
 
 @schedule(
-    job=insert_daily_binance_trades_job,
+    job=insert_daily_binance_spot_trades_to_origo_job,
     cron_schedule="0 1 * * *",
     execution_timezone="UTC")
 

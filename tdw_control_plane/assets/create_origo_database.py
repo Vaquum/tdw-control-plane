@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
+DEFAULT_CLICKHOUSE_HOST = 'clickhouse'
+DEFAULT_CLICKHOUSE_PORT = 9000
+DEFAULT_CLICKHOUSE_USER = 'default'
+
 
 @dataclass(frozen=True)
 class ClickHouseSettings:
@@ -21,11 +25,19 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _get_clickhouse_port() -> int:
+    value = os.environ.get('CLICKHOUSE_PORT', str(DEFAULT_CLICKHOUSE_PORT))
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError('CLICKHOUSE_PORT environment variable must be an integer.') from exc
+
+
 def _get_clickhouse_settings() -> ClickHouseSettings:
     return ClickHouseSettings(
-        host=_require_env('CLICKHOUSE_HOST'),
-        port=int(_require_env('CLICKHOUSE_PORT')),
-        user=_require_env('CLICKHOUSE_USER'),
+        host=os.environ.get('CLICKHOUSE_HOST', DEFAULT_CLICKHOUSE_HOST),
+        port=_get_clickhouse_port(),
+        user=os.environ.get('CLICKHOUSE_USER', DEFAULT_CLICKHOUSE_USER),
         password=_require_env('CLICKHOUSE_PASSWORD'),
         database=os.environ.get('CLICKHOUSE_DATABASE', 'origo'),
     )

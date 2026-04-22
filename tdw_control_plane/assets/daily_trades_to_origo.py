@@ -256,7 +256,8 @@ def _process_day(
             'rows_inserted': inserted_count,
             'zip_checksum': actual_checksum,
             'csv_checksum': csv_checksum,
-            'source_file': csv_filename,
+            'source_file': day_filename,
+            'csv_file': csv_filename,
         }
     finally:
         client.disconnect()
