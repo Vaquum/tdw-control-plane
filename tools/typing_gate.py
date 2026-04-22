@@ -56,6 +56,11 @@ BUDGET_PATH: Final[Path] = REPO_ROOT / '.github' / 'typing_budget.json'
 PYPROJECT_PATH: Final[Path] = REPO_ROOT / 'pyproject.toml'
 
 
+def _setup_failure(message: str) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
+
+
 # -------------------------------------------------------------------
 # File walking
 # -------------------------------------------------------------------
@@ -867,31 +872,31 @@ def load_pyproject() -> dict[str, object]:
         with open(PYPROJECT_PATH, 'rb') as f:
             return tomllib.load(f)
     except OSError as exc:
-        raise SystemExit(
-            f'typing gate cannot read {PYPROJECT_PATH.relative_to(REPO_ROOT)}: {exc}'
-        ) from exc
+        _setup_failure(
+            f'typing_gate: cannot read {PYPROJECT_PATH.relative_to(REPO_ROOT)}: {exc}'
+        )
     except tomllib.TOMLDecodeError as exc:
-        raise SystemExit(
-            f'typing gate cannot parse {PYPROJECT_PATH.relative_to(REPO_ROOT)}: {exc}'
-        ) from exc
+        _setup_failure(
+            f'typing_gate: cannot parse {PYPROJECT_PATH.relative_to(REPO_ROOT)}: {exc}'
+        )
 
 
 def load_budget() -> dict[str, object]:
     if not BUDGET_PATH.exists():
-        raise SystemExit(
+        _setup_failure(
             f'typing gate cannot run: {BUDGET_PATH.relative_to(REPO_ROOT)} '
             f'is missing. Run with --update-budget to create it.'
         )
     try:
         return json.loads(BUDGET_PATH.read_text(encoding='utf-8'))
     except OSError as exc:
-        raise SystemExit(
-            f'typing gate cannot read {BUDGET_PATH.relative_to(REPO_ROOT)}: {exc}'
-        ) from exc
+        _setup_failure(
+            f'typing_gate: cannot read {BUDGET_PATH.relative_to(REPO_ROOT)}: {exc}'
+        )
     except json.JSONDecodeError as exc:
-        raise SystemExit(
-            f'typing gate cannot parse {BUDGET_PATH.relative_to(REPO_ROOT)}: {exc}'
-        ) from exc
+        _setup_failure(
+            f'typing_gate: cannot parse {BUDGET_PATH.relative_to(REPO_ROOT)}: {exc}'
+        )
 
 
 def main() -> int:
