@@ -56,7 +56,7 @@ def test_unexpected_top_level_field_in_live_is_drift() -> None:
 
 
 def test_ignored_live_fields_match_named_set() -> None:
-    namespace: dict[str, object] = {}
+    namespace: dict[str, object] = {'__name__': 'ruleset_gate'}
     exec(RULESET_GATE.read_text(encoding='utf-8'), namespace)
     assert namespace['IGNORED_LIVE_FIELDS'] == frozenset({
         '_links',
