@@ -164,9 +164,14 @@ def fetch_issue_title(repo: str, number: int) -> str:
         print(f'cc_gate: gh not found: {exc}', file=sys.stderr)
         raise SystemExit(2) from exc
     if result.returncode != 0:
+        error_output = (
+            result.stderr.strip()
+            or result.stdout.strip()
+            or 'no error output'
+        )
         print(
             f'cc_gate: gh api repos/{repo}/issues/{number} failed '
-            f'(exit {result.returncode}): {result.stderr.strip()}',
+            f'(exit {result.returncode}): {error_output}',
             file=sys.stderr,
         )
         raise SystemExit(2)

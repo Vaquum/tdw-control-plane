@@ -36,7 +36,28 @@ def test_matches_target_snapshot() -> None:
     assert 'RULESET GATE -- PASS' in result.stdout
 
 
+def test_bypass_actor_drift_is_failure() -> None:
+    result = run_gate('ruleset_live_with_bypass_actor.json')
+    assert result.returncode == 1
+    assert 'ruleset drift detected' in result.stderr
+
+
 def test_unexpected_top_level_field_in_live_is_drift() -> None:
     result = run_gate('ruleset_live_unexpected_field.json')
     assert result.returncode == 1
     assert 'unexpected live ruleset field(s)' in result.stderr
+
+
+def test_ignored_live_fields_match_named_set() -> None:
+    namespace: dict[str, object] = {}
+    exec(RULESET_GATE.read_text(encoding='utf-8'), namespace)
+    assert namespace['IGNORED_LIVE_FIELDS'] == frozenset({
+        '_links',
+        'created_at',
+        'current_user_can_bypass',
+        'id',
+        'node_id',
+        'source',
+        'source_type',
+        'updated_at',
+    })

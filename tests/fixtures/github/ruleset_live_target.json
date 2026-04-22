@@ -13,6 +13,7 @@
       ]
     }
   },
+  "bypass_actors": [],
   "rules": [
     {
       "type": "deletion"
@@ -71,10 +72,6 @@
           },
           {
             "context": "pr_checks_version",
-            "integration_id": 15368
-          },
-          {
-            "context": "pr_checks_tests",
             "integration_id": 15368
           },
           {

@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Final
 
 SNAPSHOT_TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset({
+    'bypass_actors',
     'name',
     'target',
     'enforcement',
@@ -20,7 +21,6 @@ SNAPSHOT_TOP_LEVEL_FIELDS: Final[frozenset[str]] = frozenset({
 
 IGNORED_LIVE_FIELDS: Final[frozenset[str]] = frozenset({
     '_links',
-    'bypass_actors',
     'created_at',
     'current_user_can_bypass',
     'id',
