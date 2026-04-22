@@ -1,3 +1,8 @@
+# v1.3.2 on April 22, 2026
+- Add `.github/rulesets/main.json`, `tools/ruleset_gate.py`, `pr_checks_ruleset`, and fixture-backed ruleset drift tests so `main` can ratchet its required PR-path contexts against a checked-in snapshot.
+- Fix `tools/cc_gate.py` so linked-issue title lookup failures raise a hard setup error instead of silently skipping Conventional Commits validation.
+- Remove the post-merge CHANGELOG automation workflow and `scripts/update_changelog.py` because `pr_checks_version` is now the authoritative pre-merge version/changelog gate.
+
 # v1.3.1 on April 21, 2026
 - Add `pr_checks_fail_loud` workflow and `tools/fail_loud_gate.py` ratcheting seven silent-fallback categories in the package: `bare_except`, `empty_pass`, `empty_ellipsis`, `empty_return_none`, `empty_continue_break`, `contextlib_suppress`, `errors_ignore_kwarg`. Base-vs-head protection so the budget cannot be weakened in the same PR that gates against it.
 - Add `.github/fail_loud_budget.json` as the committed baseline oracle (`bare_except=4`, `empty_pass=6`, `empty_continue_break=1`, all others zero on 35 production files at introduction).

@@ -144,10 +144,12 @@ def list_commits(base_ref: str, head_ref: str) -> list[dict[str, object]]:
     return commits
 
 
-def fetch_issue_title(repo: str, number: int) -> str | None:
-    """Return the title of the issue, or None if the issue cannot be
-    resolved (slice_gate is the authoritative check for existence /
-    openness / labels; cc_gate only reads the title)."""
+def fetch_issue_title(repo: str, number: int) -> str:
+    """Return the title of the issue.
+
+    Any gh failure here is a gate setup failure because linked-issue
+    title validation is part of cc_gate's own contract.
+    """
     try:
         result = subprocess.run(
             [
@@ -162,12 +164,20 @@ def fetch_issue_title(repo: str, number: int) -> str | None:
         print(f'cc_gate: gh not found: {exc}', file=sys.stderr)
         raise SystemExit(2) from exc
     if result.returncode != 0:
-        # Non-fatal: if we cannot fetch, slice_gate will fail on the
-        # same PR for related reasons. We simply skip the issue-title
-        # check rather than duplicate the setup-error class.
-        return None
+        print(
+            f'cc_gate: gh api repos/{repo}/issues/{number} failed '
+            f'(exit {result.returncode}): {result.stderr.strip()}',
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
     title = result.stdout.strip()
-    return title or None
+    if not title:
+        print(
+            f'cc_gate: linked issue #{number} has an empty title payload',
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    return title
 
 
 def find_closing_references(body: str) -> list[int]:
@@ -199,18 +209,16 @@ def gate(
         if err is not None:
             failures.append(f'commit {sha[:8]} subject {subject!r} {err}.')
 
-    # Rule 3: linked issue title (if exactly one closing reference exists
-    # and the issue can be fetched). Multiple refs or no refs are a
+    # Rule 3: linked issue title. Multiple refs or no refs are a
     # slice_gate concern; cc_gate does not duplicate that failure.
     refs = find_closing_references(pr_body)
     if len(refs) == 1:
         issue_title = fetch_issue_title(repo, refs[0])
-        if issue_title is not None:
-            err = check_cc(issue_title)
-            if err is not None:
-                failures.append(
-                    f'linked issue #{refs[0]} title {issue_title!r} {err}.'
-                )
+        err = check_cc(issue_title)
+        if err is not None:
+            failures.append(
+                f'linked issue #{refs[0]} title {issue_title!r} {err}.'
+            )
 
     return failures
 
