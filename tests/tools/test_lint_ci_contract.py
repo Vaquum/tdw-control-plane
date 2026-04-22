@@ -14,6 +14,28 @@ RULESET_WORKFLOW: Final[Path] = REPO_ROOT / '.github/workflows/pr_checks_ruleset
 RULESET_SNAPSHOT: Final[Path] = REPO_ROOT / '.github/rulesets/main.json'
 BAD_FIXTURE: Final[Path] = REPO_ROOT / 'tests/fixtures/lint/bad_imports.py'
 RUFF_VERSION: Final[str] = '0.15.11'
+EXPECTED_RUFF_POLICY: Final[dict[str, object]] = {
+    'exclude': [
+        '.git',
+        '__pycache__',
+        'build',
+        'dist',
+        'quickstart_etl_tests',
+    ],
+    'select': [
+        'E',
+        'F',
+        'I',
+        'UP',
+        'RUF',
+        'BLE',
+        'ANN',
+    ],
+    'ignore': ['E501'],
+    'per-file-ignores': {
+        'quickstart_etl_tests/**/*.py': ['S101', 'ANN', 'BLE001'],
+    },
+}
 
 
 def _required_status_contexts() -> list[str]:
@@ -80,14 +102,17 @@ def test_ruff_pin_is_consistent_across_workflows() -> None:
     assert pins == [RUFF_VERSION]
 
 
-def test_pyproject_ruff_ignore_contract() -> None:
+def test_pyproject_ruff_policy_contract() -> None:
     data = tomllib.loads((REPO_ROOT / 'pyproject.toml').read_text(encoding='utf-8'))
-    lint = data['tool']['ruff']['lint']
+    ruff = data['tool']['ruff']
+    actual_policy = {
+        'exclude': ruff.get('exclude'),
+        'select': ruff['lint'].get('select'),
+        'ignore': ruff['lint'].get('ignore'),
+        'per-file-ignores': ruff['lint'].get('per-file-ignores'),
+    }
 
-    assert sorted(lint['ignore']) == ['E501']
-    assert 'tools/slice_gate.py' not in lint['per-file-ignores']
-    assert 'tools/typing_gate.py' not in lint['per-file-ignores']
+    assert actual_policy == EXPECTED_RUFF_POLICY
 
-    for path in ('tools/slice_gate.py', 'tools/typing_gate.py'):
-        result = _run_ruff('check', '--isolated', '--select', 'BLE001', path)
-        assert result.returncode == 0, result.stdout + result.stderr
+    result = _run_ruff('check', '--isolated', '--select', 'BLE001', 'tools', 'tests/tools')
+    assert result.returncode == 0, result.stdout + result.stderr
