@@ -1,18 +1,12 @@
 from __future__ import annotations
 
-import csv
-import hashlib
-import json
-import os
+import importlib
 import shutil
 import socket
 import subprocess
 import time
-import zipfile
-from datetime import datetime, timezone
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
-from io import BytesIO
 from pathlib import Path
 from threading import Thread
 from typing import Any
@@ -22,25 +16,10 @@ import pytest
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import materialize
 
-os.environ.setdefault('CLICKHOUSE_HOST', '127.0.0.1')
-os.environ.setdefault('CLICKHOUSE_PORT', '9000')
-os.environ.setdefault('CLICKHOUSE_USER', 'default')
-os.environ.setdefault('CLICKHOUSE_PASSWORD', 'test-password')
-
-from tdw_control_plane.assets.create_binance_trades_table_origo import (
-    LEDGER_TABLE_NAME,
-    RAW_TABLE_NAME,
-    create_binance_daily_spot_trades_table_origo,
-)
-from tdw_control_plane.assets.create_origo_database import create_origo_database
-from tdw_control_plane.assets.daily_trades_to_origo import (
-    insert_daily_binance_spot_trades_to_origo,
-)
+from .helpers import BINANCE_FIXTURE_ROOT, ORIGO_DATABASE
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-BINANCE_FIXTURE_ROOT = REPO_ROOT / 'tests' / 'fixtures' / 'binance'
 CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:24.3'
-ORIGO_DATABASE = 'origo'
 
 
 def _free_port() -> int:
@@ -64,7 +43,16 @@ def _wait_for_clickhouse(host: str, port: int, user: str, password: str) -> None
             result = client.execute('SELECT 1')
             if result == [(1,)]:
                 return
-        except Exception as exc:
+        except OSError as exc:
+            last_error = exc
+            time.sleep(1)
+        except RuntimeError as exc:
+            last_error = exc
+            time.sleep(1)
+        except ValueError as exc:
+            last_error = exc
+            time.sleep(1)
+        except EOFError as exc:
             last_error = exc
             time.sleep(1)
         finally:
@@ -112,70 +100,6 @@ def _query_rows(settings: dict[str, str], query: str) -> list[tuple[Any, ...]]:
         return client.execute(query)
     finally:
         client.disconnect()
-
-
-def _load_fixture_zip_bytes(date_str: str) -> bytes:
-    path = (
-        BINANCE_FIXTURE_ROOT
-        / 'spot'
-        / 'daily'
-        / 'trades'
-        / 'BTCUSDT'
-        / f'BTCUSDT-trades-{date_str}.zip'
-    )
-    return path.read_bytes()
-
-
-def load_expected_trade_rows(date_str: str) -> list[tuple[Any, ...]]:
-    zip_bytes = _load_fixture_zip_bytes(date_str)
-    with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-        csv_name = archive.namelist()[0]
-        with archive.open(csv_name) as csv_file:
-            csv_bytes = csv_file.read()
-
-    rows: list[tuple[Any, ...]] = []
-    reader = csv.reader(csv_bytes.decode('utf-8').splitlines())
-    for row in reader:
-        timestamp = int(row[4])
-        if len(str(timestamp)) == 13:
-            dt = datetime.fromtimestamp(timestamp / 1000.0, tz=timezone.utc).replace(
-                tzinfo=None
-            )
-        else:
-            dt = datetime.fromtimestamp(timestamp / 1000000.0, tz=timezone.utc).replace(
-                tzinfo=None
-            )
-        rows.append(
-            (
-                int(row[0]),
-                float(row[1]),
-                float(row[2]),
-                float(row[3]),
-                timestamp,
-                1 if row[5].lower() == 'true' else 0,
-                1 if row[6].lower() == 'true' else 0,
-                dt,
-            )
-        )
-    return rows
-
-
-def load_expected_ledger_payload(date_str: str) -> dict[str, Any]:
-    zip_bytes = _load_fixture_zip_bytes(date_str)
-    zip_checksum = hashlib.sha256(zip_bytes).hexdigest()
-    with zipfile.ZipFile(BytesIO(zip_bytes)) as archive:
-        with archive.open(archive.namelist()[0]) as csv_file:
-            csv_bytes = csv_file.read()
-
-    return {
-        'source_date': date_str,
-        'source_file': f'BTCUSDT-trades-{date_str}.zip',
-        'zip_checksum': zip_checksum,
-        'csv_checksum': hashlib.sha256(csv_bytes).hexdigest(),
-        'source_row_count': len(load_expected_trade_rows(date_str)),
-    }
-
-
 @pytest.fixture(scope='session')
 def clickhouse_settings() -> dict[str, str]:
     if shutil.which('docker') is None:
@@ -260,13 +184,40 @@ def origo_test_env(
 
 
 @pytest.fixture()
-def materialize_origo_assets(origo_test_env: dict[str, str]):
-    def _run(*, partition_key: str | None = None):
+def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
+    create_origo_database_module = importlib.import_module(
+        'tdw_control_plane.assets.create_origo_database'
+    )
+    create_binance_trades_table_origo_module = importlib.import_module(
+        'tdw_control_plane.assets.create_binance_trades_table_origo'
+    )
+    daily_trades_to_origo_module = importlib.import_module(
+        'tdw_control_plane.assets.daily_trades_to_origo'
+    )
+
+    return {
+        'create_origo_database': create_origo_database_module.create_origo_database,
+        'create_binance_daily_spot_trades_table_origo': (
+            create_binance_trades_table_origo_module.create_binance_daily_spot_trades_table_origo
+        ),
+        'insert_daily_binance_spot_trades_to_origo': (
+            daily_trades_to_origo_module.insert_daily_binance_spot_trades_to_origo
+        ),
+        'RAW_TABLE_NAME': create_binance_trades_table_origo_module.RAW_TABLE_NAME,
+        'LEDGER_TABLE_NAME': create_binance_trades_table_origo_module.LEDGER_TABLE_NAME,
+    }
+
+
+@pytest.fixture()
+def materialize_origo_assets(
+    origo_assets: dict[str, Any],
+) -> Any:
+    def _run(*, partition_key: str | None = None) -> Any:
         return materialize(
             [
-                create_origo_database,
-                create_binance_daily_spot_trades_table_origo,
-                insert_daily_binance_spot_trades_to_origo,
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_daily_spot_trades_table_origo'],
+                origo_assets['insert_daily_binance_spot_trades_to_origo'],
             ],
             partition_key=partition_key,
         )
@@ -275,19 +226,8 @@ def materialize_origo_assets(origo_test_env: dict[str, str]):
 
 
 @pytest.fixture()
-def query_origo(clickhouse_settings: dict[str, str]):
+def query_origo(clickhouse_settings: dict[str, str]) -> Any:
     def _run(query: str) -> list[tuple[Any, ...]]:
         return _query_rows(clickhouse_settings, query)
 
     return _run
-
-
-def dump_ruleset_contexts() -> str:
-    path = REPO_ROOT / '.github' / 'rulesets' / 'main.json'
-    payload = json.loads(path.read_text(encoding='utf-8'))
-    checks = next(
-        rule['parameters']['required_status_checks']
-        for rule in payload['rules']
-        if rule['type'] == 'required_status_checks'
-    )
-    return '\n'.join(entry['context'] for entry in checks)

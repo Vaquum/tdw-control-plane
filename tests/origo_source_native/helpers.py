@@ -35,14 +35,20 @@ def load_expected_trade_rows(date_str: str) -> list[tuple[Any, ...]]:
     rows: list[tuple[Any, ...]] = []
     reader = csv.reader(csv_bytes.decode('utf-8').splitlines())
     for row in reader:
-        timestamp = int(row[4])
-        if len(str(timestamp)) == 13:
+        raw_timestamp = row[4]
+        timestamp = int(raw_timestamp)
+        timestamp_length = len(raw_timestamp)
+        if timestamp_length == 13:
             dt = datetime.fromtimestamp(timestamp / 1000.0, tz=timezone.utc).replace(
                 tzinfo=None
             )
-        else:
+        elif timestamp_length == 16:
             dt = datetime.fromtimestamp(timestamp / 1000000.0, tz=timezone.utc).replace(
                 tzinfo=None
+            )
+        else:
+            raise ValueError(
+                f'Unsupported fixture timestamp length {timestamp_length} for value {raw_timestamp}'
             )
         rows.append(
             (

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import importlib
 from pathlib import Path
-
-from tdw_control_plane.assets.create_origo_database import _get_clickhouse_settings
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -20,7 +19,10 @@ def test_origo_clickhouse_settings_preserve_compose_defaults(monkeypatch) -> Non
     monkeypatch.delenv('CLICKHOUSE_DATABASE', raising=False)
     monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
 
-    settings = _get_clickhouse_settings()
+    create_origo_database_module = importlib.import_module(
+        'tdw_control_plane.assets.create_origo_database'
+    )
+    settings = create_origo_database_module._get_clickhouse_settings()
 
     assert settings.host == 'clickhouse'
     assert settings.port == 9000
