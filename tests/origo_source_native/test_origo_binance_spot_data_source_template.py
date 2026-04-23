@@ -59,14 +59,15 @@ def test_aligned_1m_exchange_table_name_contract(origo_assets: dict[str, object]
     assert origo_assets['ALIGNED_TABLE_NAME'] == 'aligned_1m_exchange'
 
 
-def test_daily_spot_pipeline_schedule_targets_binance_spot_data_source_job(
+def test_daily_binance_spot_pipeline_schedule_targets_binance_spot_data_source_job(
     origo_definitions_module,
 ) -> None:
-    schedule_def = origo_definitions_module.daily_spot_pipeline_schedule
+    schedule_def = origo_definitions_module.daily_binance_spot_pipeline_schedule
     job_def = origo_definitions_module.defs.get_job_def('refresh_binance_spot_data_source_job')
     node_names = set(job_def.graph.node_dict.keys())
 
     assert not hasattr(origo_definitions_module, 'daily_pipeline_schedule')
+    assert not hasattr(origo_definitions_module, 'daily_spot_pipeline_schedule')
     assert schedule_def.job.name == 'refresh_binance_spot_data_source_job'
     assert node_names >= {
         'insert_daily_binance_spot_trades_to_origo',

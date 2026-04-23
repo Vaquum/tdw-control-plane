@@ -357,8 +357,7 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
     job=refresh_binance_spot_data_source_job,
     cron_schedule="0 1 * * *",
     execution_timezone="UTC")
-
-def daily_spot_pipeline_schedule():
+def daily_binance_spot_pipeline_schedule():
     return {}
 
 
@@ -366,7 +365,7 @@ def daily_spot_pipeline_schedule():
     job=refresh_binance_futures_data_source_job,
     cron_schedule="0 1 * * *",
     execution_timezone="UTC")
-def daily_futures_pipeline_schedule():
+def daily_binance_futures_pipeline_schedule():
     return {}
 
 
@@ -510,8 +509,8 @@ defs = Definitions(
             insert_monthly_binance_futures_agg_trades_to_tdw],
     
     schedules=[
-        daily_spot_pipeline_schedule,
-        daily_futures_pipeline_schedule,
+        daily_binance_spot_pipeline_schedule,
+        daily_binance_futures_pipeline_schedule,
         daily_tdw_pipeline_schedule,
         monthly_tdw_rollforward_schedule,
     ],
