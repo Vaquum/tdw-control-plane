@@ -29,7 +29,7 @@ def _delete_partition_rows(
     client.execute(
         f"""
         ALTER TABLE {database}.{KLINES_TABLE_NAME}
-        DELETE WHERE toDate(fromUnixTimestamp64Milli(open_time)) = toDate('{partition_date}')
+        DELETE WHERE toDate(datetime) = toDate('{partition_date}')
         """,
         settings={'mutations_sync': 2},
     )
@@ -44,7 +44,7 @@ def _count_partition_rows(
         f"""
         SELECT count()
         FROM {database}.{KLINES_TABLE_NAME}
-        WHERE toDate(fromUnixTimestamp64Milli(open_time)) = toDate('{partition_date}')
+        WHERE toDate(datetime) = toDate('{partition_date}')
         """
     )
     return int(result[0][0])
@@ -59,22 +59,34 @@ def _insert_partition_rows(
         f"""
         INSERT INTO {database}.{KLINES_TABLE_NAME}
         SELECT
-            toUnixTimestamp(toStartOfMinute(datetime)) * 1000 AS open_time,
+            kline_datetime AS datetime,
             argMin(price, trade_id) AS open,
             max(price) AS high,
             min(price) AS low,
             argMax(price, trade_id) AS close,
-            sum(quantity) AS volume,
-            ((toUnixTimestamp(toStartOfMinute(datetime)) + 60) * 1000) - 1 AS close_time,
-            sum(quote_quantity) AS quote_asset_volume,
-            count() AS number_of_trades,
-            sumIf(quantity, is_buyer_maker = 0) AS taker_buy_base_asset_volume,
-            sumIf(quote_quantity, is_buyer_maker = 0) AS taker_buy_quote_asset_volume,
-            toFloat64(0) AS ignore
-        FROM {database}.{RAW_TABLE_NAME}
-        WHERE toDate(datetime) = toDate('{partition_date}')
-        GROUP BY toStartOfMinute(datetime)
-        ORDER BY open_time
+            avg(price) AS mean,
+            stddevPopStable(price) AS std,
+            quantileExact(0.5)(price) AS median,
+            quantileExact(0.75)(price) - quantileExact(0.25)(price) AS iqr,
+            sumKahan(quantity) AS volume,
+            avg(is_buyer_maker) AS maker_ratio,
+            count() AS no_of_trades,
+            argMin(price * quantity, trade_id) AS open_liquidity,
+            max(price * quantity) AS high_liquidity,
+            min(price * quantity) AS low_liquidity,
+            argMax(price * quantity, trade_id) AS close_liquidity,
+            sum(price * quantity) AS liquidity_sum,
+            sumKahan(is_buyer_maker * quantity) AS maker_volume,
+            sum(is_buyer_maker * price * quantity) AS maker_liquidity
+        FROM (
+            SELECT
+                *,
+                toDateTime(60 * intDiv(toUnixTimestamp(datetime), 60)) AS kline_datetime
+            FROM {database}.{RAW_TABLE_NAME}
+            WHERE toDate(datetime) = toDate('{partition_date}')
+        )
+        GROUP BY kline_datetime
+        ORDER BY kline_datetime
         """
     )
 

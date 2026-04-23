@@ -28,7 +28,7 @@ def _delete_partition_rows(
         f"""
         ALTER TABLE {database}.{ALIGNED_TABLE_NAME}
         DELETE WHERE dataset_source = '{BINANCE_SPOT_DATASET_SOURCE}'
-          AND toDate(fromUnixTimestamp64Milli(open_time)) = toDate('{partition_date}')
+          AND toDate(datetime) = toDate('{partition_date}')
         """,
         settings={'mutations_sync': 2},
     )
@@ -44,7 +44,7 @@ def _count_partition_rows(
         SELECT count()
         FROM {database}.{ALIGNED_TABLE_NAME}
         WHERE dataset_source = '{BINANCE_SPOT_DATASET_SOURCE}'
-          AND toDate(fromUnixTimestamp64Milli(open_time)) = toDate('{partition_date}')
+          AND toDate(datetime) = toDate('{partition_date}')
         """
     )
     return int(result[0][0])
@@ -60,21 +60,28 @@ def _insert_partition_rows(
         INSERT INTO {database}.{ALIGNED_TABLE_NAME}
         SELECT
             '{BINANCE_SPOT_DATASET_SOURCE}' AS dataset_source,
-            open_time,
+            datetime,
             open,
             high,
             low,
             close,
+            mean,
+            std,
+            median,
+            iqr,
             volume,
-            close_time,
-            quote_asset_volume,
-            number_of_trades,
-            taker_buy_base_asset_volume,
-            taker_buy_quote_asset_volume,
-            ignore
+            maker_ratio,
+            no_of_trades,
+            open_liquidity,
+            high_liquidity,
+            low_liquidity,
+            close_liquidity,
+            liquidity_sum,
+            maker_volume,
+            maker_liquidity
         FROM {database}.{KLINES_TABLE_NAME}
-        WHERE toDate(fromUnixTimestamp64Milli(open_time)) = toDate('{partition_date}')
-        ORDER BY open_time
+        WHERE toDate(datetime) = toDate('{partition_date}')
+        ORDER BY datetime
         """
     )
 

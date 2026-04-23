@@ -17,22 +17,29 @@ def _create_aligned_table(client: ClickhouseClient, settings: ClickHouseSettings
         f"""
         CREATE TABLE IF NOT EXISTS {settings.database}.{ALIGNED_TABLE_NAME} (
             dataset_source LowCardinality(String),
-            open_time UInt64,
+            datetime DateTime,
             open Float64,
             high Float64,
             low Float64,
             close Float64,
+            mean Float64,
+            std Float64,
+            median Float64,
+            iqr Float64,
             volume Float64,
-            close_time UInt64,
-            quote_asset_volume Float64,
-            number_of_trades UInt64,
-            taker_buy_base_asset_volume Float64,
-            taker_buy_quote_asset_volume Float64,
-            ignore Float64
+            maker_ratio Float64,
+            no_of_trades UInt64,
+            open_liquidity Float64,
+            high_liquidity Float64,
+            low_liquidity Float64,
+            close_liquidity Float64,
+            liquidity_sum Float64,
+            maker_volume Float64,
+            maker_liquidity Float64
         )
         ENGINE = MergeTree()
-        PARTITION BY toYYYYMM(fromUnixTimestamp64Milli(open_time))
-        ORDER BY (dataset_source, open_time)
+        PARTITION BY toYYYYMM(datetime)
+        ORDER BY (dataset_source, datetime)
         """
     )
 
