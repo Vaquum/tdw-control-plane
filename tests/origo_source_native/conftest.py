@@ -4,6 +4,7 @@ import importlib
 import shutil
 import socket
 import subprocess
+import sys
 import time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -100,6 +101,13 @@ def _query_rows(settings: dict[str, str], query: str) -> list[tuple[Any, ...]]:
         return client.execute(query)
     finally:
         client.disconnect()
+
+
+def _reload_module(module_name: str) -> Any:
+    sys.modules.pop(module_name, None)
+    return importlib.import_module(module_name)
+
+
 @pytest.fixture(scope='session')
 def clickhouse_settings() -> dict[str, str]:
     if shutil.which('docker') is None:
@@ -185,14 +193,22 @@ def origo_test_env(
 
 @pytest.fixture()
 def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
-    create_origo_database_module = importlib.import_module(
-        'tdw_control_plane.assets.create_origo_database'
-    )
-    create_binance_trades_table_origo_module = importlib.import_module(
+    create_origo_database_module = _reload_module('tdw_control_plane.assets.create_origo_database')
+    create_binance_trades_table_origo_module = _reload_module(
         'tdw_control_plane.assets.create_binance_trades_table_origo'
     )
-    daily_trades_to_origo_module = importlib.import_module(
-        'tdw_control_plane.assets.daily_trades_to_origo'
+    daily_trades_to_origo_module = _reload_module('tdw_control_plane.assets.daily_trades_to_origo')
+    create_binance_spot_klines_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_klines_table_origo'
+    )
+    refresh_binance_spot_klines_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_klines_origo'
+    )
+    create_aligned_1m_exchange_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_aligned_1m_exchange_table_origo'
+    )
+    refresh_aligned_1m_exchange_from_binance_spot_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_spot_origo'
     )
 
     return {
@@ -205,6 +221,23 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         ),
         'RAW_TABLE_NAME': create_binance_trades_table_origo_module.RAW_TABLE_NAME,
         'LEDGER_TABLE_NAME': create_binance_trades_table_origo_module.LEDGER_TABLE_NAME,
+        'create_binance_spot_klines_table_origo': (
+            create_binance_spot_klines_table_origo_module.create_binance_spot_klines_table_origo
+        ),
+        'refresh_binance_spot_klines_origo': (
+            refresh_binance_spot_klines_origo_module.refresh_binance_spot_klines_origo
+        ),
+        'KLINES_TABLE_NAME': create_binance_spot_klines_table_origo_module.KLINES_TABLE_NAME,
+        'create_aligned_1m_exchange_table_origo': (
+            create_aligned_1m_exchange_table_origo_module.create_aligned_1m_exchange_table_origo
+        ),
+        'refresh_aligned_1m_exchange_from_binance_spot_origo': (
+            refresh_aligned_1m_exchange_from_binance_spot_origo_module.refresh_aligned_1m_exchange_from_binance_spot_origo
+        ),
+        'ALIGNED_TABLE_NAME': create_aligned_1m_exchange_table_origo_module.ALIGNED_TABLE_NAME,
+        'BINANCE_SPOT_DATASET_SOURCE': (
+            refresh_aligned_1m_exchange_from_binance_spot_origo_module.BINANCE_SPOT_DATASET_SOURCE
+        ),
     }
 
 
@@ -223,6 +256,29 @@ def materialize_origo_assets(
         )
 
     return _run
+
+
+@pytest.fixture()
+def materialize_binance_spot_data_source_assets(
+    origo_assets: dict[str, Any],
+) -> Any:
+    def _run(*, partition_key: str | None = None) -> Any:
+        return materialize(
+            [
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_daily_spot_trades_table_origo'],
+                origo_assets['create_binance_spot_klines_table_origo'],
+                origo_assets['create_aligned_1m_exchange_table_origo'],
+                origo_assets['insert_daily_binance_spot_trades_to_origo'],
+                origo_assets['refresh_binance_spot_klines_origo'],
+                origo_assets['refresh_aligned_1m_exchange_from_binance_spot_origo'],
+            ],
+            partition_key=partition_key,
+        )
+
+    return _run
+
+
 
 
 @pytest.fixture()
