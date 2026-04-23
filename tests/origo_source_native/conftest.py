@@ -166,7 +166,7 @@ def clickhouse_settings() -> dict[str, str]:
 
 
 @pytest.fixture(scope='session')
-def binance_daily_base_url() -> str:
+def binance_fixture_server_root_url() -> str:
     port = _free_port()
     handler = partial(SimpleHTTPRequestHandler, directory=str(BINANCE_FIXTURE_ROOT))
     server = ThreadingHTTPServer(('127.0.0.1', port), handler)
@@ -174,10 +174,20 @@ def binance_daily_base_url() -> str:
     thread.start()
 
     try:
-        yield f'http://127.0.0.1:{port}/spot/daily/trades/BTCUSDT/'
+        yield f'http://127.0.0.1:{port}'
     finally:
         server.shutdown()
         thread.join(timeout=5)
+
+
+@pytest.fixture(scope='session')
+def binance_daily_base_url(binance_fixture_server_root_url: str) -> str:
+    return f'{binance_fixture_server_root_url}/spot/daily/trades/BTCUSDT/'
+
+
+@pytest.fixture(scope='session')
+def binance_futures_daily_base_url(binance_fixture_server_root_url: str) -> str:
+    return f'{binance_fixture_server_root_url}/futures/daily/trades/BTCUSDT/'
 
 
 @pytest.fixture()
@@ -185,11 +195,13 @@ def origo_test_env(
     monkeypatch: pytest.MonkeyPatch,
     clickhouse_settings: dict[str, str],
     binance_daily_base_url: str,
+    binance_futures_daily_base_url: str,
 ) -> dict[str, str]:
     _drop_origo_database(clickhouse_settings)
     for key, value in clickhouse_settings.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv('BINANCE_SPOT_DAILY_TRADES_BASE_URL', binance_daily_base_url)
+    monkeypatch.setenv('BINANCE_FUTURES_DAILY_TRADES_BASE_URL', binance_futures_daily_base_url)
 
     yield clickhouse_settings
 
@@ -202,12 +214,24 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     create_binance_trades_table_origo_module = _reload_module(
         'tdw_control_plane.assets.create_binance_trades_table_origo'
     )
+    create_binance_futures_trades_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_futures_trades_table_origo'
+    )
     daily_trades_to_origo_module = _reload_module('tdw_control_plane.assets.daily_trades_to_origo')
+    daily_futures_trades_to_origo_module = _reload_module(
+        'tdw_control_plane.assets.daily_futures_trades_to_origo'
+    )
     create_binance_spot_klines_table_origo_module = _reload_module(
         'tdw_control_plane.assets.create_binance_spot_klines_table_origo'
     )
+    create_binance_futures_klines_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_futures_klines_table_origo'
+    )
     refresh_binance_spot_klines_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_binance_spot_klines_origo'
+    )
+    refresh_binance_futures_klines_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_futures_klines_origo'
     )
     create_aligned_1m_exchange_table_origo_module = _reload_module(
         'tdw_control_plane.assets.create_aligned_1m_exchange_table_origo'
@@ -215,33 +239,59 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     refresh_aligned_1m_exchange_from_binance_spot_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_spot_origo'
     )
+    refresh_aligned_1m_exchange_from_binance_futures_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_futures_origo'
+    )
 
     return {
         'create_origo_database': create_origo_database_module.create_origo_database,
         'create_binance_daily_spot_trades_table_origo': (
             create_binance_trades_table_origo_module.create_binance_daily_spot_trades_table_origo
         ),
+        'create_binance_daily_futures_trades_table_origo': (
+            create_binance_futures_trades_table_origo_module.create_binance_daily_futures_trades_table_origo
+        ),
         'insert_daily_binance_spot_trades_to_origo': (
             daily_trades_to_origo_module.insert_daily_binance_spot_trades_to_origo
         ),
+        'insert_daily_binance_futures_trades_to_origo': (
+            daily_futures_trades_to_origo_module.insert_daily_binance_futures_trades_to_origo
+        ),
         'RAW_TABLE_NAME': create_binance_trades_table_origo_module.RAW_TABLE_NAME,
         'LEDGER_TABLE_NAME': create_binance_trades_table_origo_module.LEDGER_TABLE_NAME,
+        'FUTURES_RAW_TABLE_NAME': create_binance_futures_trades_table_origo_module.RAW_TABLE_NAME,
+        'FUTURES_LEDGER_TABLE_NAME': create_binance_futures_trades_table_origo_module.LEDGER_TABLE_NAME,
         'create_binance_spot_klines_table_origo': (
             create_binance_spot_klines_table_origo_module.create_binance_spot_klines_table_origo
+        ),
+        'create_binance_futures_klines_table_origo': (
+            create_binance_futures_klines_table_origo_module.create_binance_futures_klines_table_origo
         ),
         'refresh_binance_spot_klines_origo': (
             refresh_binance_spot_klines_origo_module.refresh_binance_spot_klines_origo
         ),
+        'refresh_binance_futures_klines_origo': (
+            refresh_binance_futures_klines_origo_module.refresh_binance_futures_klines_origo
+        ),
         'KLINES_TABLE_NAME': create_binance_spot_klines_table_origo_module.KLINES_TABLE_NAME,
+        'FUTURES_KLINES_TABLE_NAME': (
+            create_binance_futures_klines_table_origo_module.KLINES_TABLE_NAME
+        ),
         'create_aligned_1m_exchange_table_origo': (
             create_aligned_1m_exchange_table_origo_module.create_aligned_1m_exchange_table_origo
         ),
         'refresh_aligned_1m_exchange_from_binance_spot_origo': (
             refresh_aligned_1m_exchange_from_binance_spot_origo_module.refresh_aligned_1m_exchange_from_binance_spot_origo
         ),
+        'refresh_aligned_1m_exchange_from_binance_futures_origo': (
+            refresh_aligned_1m_exchange_from_binance_futures_origo_module.refresh_aligned_1m_exchange_from_binance_futures_origo
+        ),
         'ALIGNED_TABLE_NAME': create_aligned_1m_exchange_table_origo_module.ALIGNED_TABLE_NAME,
         'BINANCE_SPOT_DATASET_SOURCE': (
             refresh_aligned_1m_exchange_from_binance_spot_origo_module.BINANCE_SPOT_DATASET_SOURCE
+        ),
+        'BINANCE_FUTURES_DATASET_SOURCE': (
+            refresh_aligned_1m_exchange_from_binance_futures_origo_module.BINANCE_FUTURES_DATASET_SOURCE
         ),
     }
 
@@ -280,6 +330,59 @@ def materialize_binance_spot_data_source_assets(
             ],
             partition_key=partition_key,
         )
+
+    return _run
+
+
+@pytest.fixture()
+def materialize_binance_futures_raw_assets(
+    origo_assets: dict[str, Any],
+) -> Any:
+    def _run(*, partition_key: str | None = None) -> Any:
+        return materialize(
+            [
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_daily_futures_trades_table_origo'],
+                origo_assets['insert_daily_binance_futures_trades_to_origo'],
+            ],
+            partition_key=partition_key,
+        )
+
+    return _run
+
+
+@pytest.fixture()
+def materialize_binance_futures_data_source_assets(
+    origo_assets: dict[str, Any],
+) -> Any:
+    def _run(*, partition_key: str | None = None) -> Any:
+        return materialize(
+            [
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_daily_futures_trades_table_origo'],
+                origo_assets['create_binance_futures_klines_table_origo'],
+                origo_assets['create_aligned_1m_exchange_table_origo'],
+                origo_assets['insert_daily_binance_futures_trades_to_origo'],
+                origo_assets['refresh_binance_futures_klines_origo'],
+                origo_assets['refresh_aligned_1m_exchange_from_binance_futures_origo'],
+            ],
+            partition_key=partition_key,
+        )
+
+    return _run
+
+
+@pytest.fixture()
+def materialize_spot_and_futures_data_source_assets(
+    materialize_binance_spot_data_source_assets,
+    materialize_binance_futures_data_source_assets,
+) -> Any:
+    def _run(*, spot_partition_key: str, futures_partition_key: str) -> tuple[Any, Any]:
+        spot_result = materialize_binance_spot_data_source_assets(partition_key=spot_partition_key)
+        futures_result = materialize_binance_futures_data_source_assets(
+            partition_key=futures_partition_key
+        )
+        return spot_result, futures_result
 
     return _run
 
