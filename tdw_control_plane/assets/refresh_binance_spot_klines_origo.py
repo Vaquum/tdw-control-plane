@@ -59,7 +59,7 @@ def _insert_partition_rows(
         f"""
         INSERT INTO {database}.{KLINES_TABLE_NAME}
         SELECT
-            toDateTime(60 * intDiv(toUnixTimestamp(datetime), 60)) AS datetime,
+            kline_datetime AS datetime,
             argMin(price, trade_id) AS open,
             max(price) AS high,
             min(price) AS low,
@@ -78,10 +78,15 @@ def _insert_partition_rows(
             sum(price * quantity) AS liquidity_sum,
             sumKahan(is_buyer_maker * quantity) AS maker_volume,
             sum(is_buyer_maker * price * quantity) AS maker_liquidity
-        FROM {database}.{RAW_TABLE_NAME}
-        WHERE toDate(datetime) = toDate('{partition_date}')
-        GROUP BY datetime
-        ORDER BY datetime
+        FROM (
+            SELECT
+                *,
+                toDateTime(60 * intDiv(toUnixTimestamp(datetime), 60)) AS kline_datetime
+            FROM {database}.{RAW_TABLE_NAME}
+            WHERE toDate(datetime) = toDate('{partition_date}')
+        )
+        GROUP BY kline_datetime
+        ORDER BY kline_datetime
         """
     )
 

@@ -12,24 +12,9 @@ TDW_CONTRACT_FIXTURE_PATH = (
 )
 TDW_KLINE_COLUMN_TYPES = [
     'DateTime',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
+    *(['Float64'] * 10),
     'UInt64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
-    'Float64',
+    *(['Float64'] * 7),
 ]
 TDW_ALIGNED_COLUMN_TYPES = ['LowCardinality(String)', *TDW_KLINE_COLUMN_TYPES]
 
