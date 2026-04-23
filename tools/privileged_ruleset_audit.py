@@ -28,6 +28,11 @@ def _load_shared_ruleset_gate_module() -> types.ModuleType:
 shared_ruleset_gate = _load_shared_ruleset_gate_module()
 
 
+def fail(message: str, *, code: int) -> int:
+    print(f'privileged_ruleset_audit: {message}', file=sys.stderr)
+    return code
+
+
 def _write_live_payload_snapshot(output_dir: Path, payload: dict[str, Any]) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / LIVE_PAYLOAD_SNAPSHOT
@@ -48,7 +53,7 @@ def normalize_privileged_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]
     )
     if unexpected:
         raise SystemExit(
-            shared_ruleset_gate.fail(
+            fail(
                 f'unexpected live ruleset field(s): {sorted(unexpected)}',
                 code=1,
             )
@@ -57,7 +62,7 @@ def normalize_privileged_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]
     missing_required = shared_ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS - live_fields
     if missing_required:
         raise SystemExit(
-            shared_ruleset_gate.fail(
+            fail(
                 f'expected live ruleset field(s) missing: {sorted(missing_required)}',
                 code=1,
             )
@@ -66,7 +71,7 @@ def normalize_privileged_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]
     missing_optional = shared_ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS - live_fields
     if missing_optional:
         raise SystemExit(
-            shared_ruleset_gate.fail(
+            fail(
                 'privileged live ruleset missing required observable field(s): '
                 f'{sorted(missing_optional)}',
                 code=2,
@@ -84,7 +89,7 @@ def run_audit(
     *,
     ruleset_file: str,
     repo: str | None,
-    ruleset_id: str,
+    ruleset_id: int,
     output_dir: str,
     live_json: str | None = None,
 ) -> int:
@@ -93,7 +98,7 @@ def run_audit(
     )
     live_payload = shared_ruleset_gate.load_live_ruleset(
         repo=repo,
-        ruleset_id=ruleset_id,
+        ruleset_id=str(ruleset_id),
         live_json=live_json,
     )
     snapshot_dir = Path(output_dir)
@@ -144,7 +149,7 @@ def main() -> int:
     return run_audit(
         ruleset_file=args.ruleset_file,
         repo=args.repo,
-        ruleset_id=str(args.ruleset_id),
+        ruleset_id=args.ruleset_id,
         output_dir=args.output_dir,
     )
 

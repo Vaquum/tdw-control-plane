@@ -26,7 +26,7 @@ jobs:
         run: python -m venv .venv-ruleset-audit
 
       - name: Install audit dependencies
-        run: .venv-ruleset-audit/bin/python -m pip install --upgrade pip pytest
+        run: .venv-ruleset-audit/bin/python -m pip install --upgrade pip
 
       - name: Audit live main ruleset with privileged token
         env:

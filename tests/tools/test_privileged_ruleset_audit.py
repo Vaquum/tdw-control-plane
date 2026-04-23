@@ -24,6 +24,15 @@ def _load_audit_module() -> types.ModuleType:
     return module
 
 
+def _load_ruleset_gate_module() -> types.ModuleType:
+    spec = importlib.util.spec_from_file_location('ruleset_gate_independent', REPO_ROOT / 'tools/ruleset_gate.py')
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _run_audit_fixture(live_fixture: str, tmp_path: Path) -> tuple[int, str, str]:
     module = _load_audit_module()
     stdout = io.StringIO()
@@ -33,7 +42,7 @@ def _run_audit_fixture(live_fixture: str, tmp_path: Path) -> tuple[int, str, str
             code = module.run_audit(
                 ruleset_file=str(SNAPSHOT),
                 repo=None,
-                ruleset_id='5406599',
+                ruleset_id=5406599,
                 output_dir=str(tmp_path),
                 live_json=str(FIXTURES / live_fixture),
             )
@@ -98,17 +107,18 @@ def test_privileged_ruleset_audit_fails_loud_when_live_payload_omits_bypass_acto
 
 def test_privileged_ruleset_audit_shares_ruleset_gate_semantics() -> None:
     module = _load_audit_module()
+    ruleset_gate = _load_ruleset_gate_module()
 
     assert (
         module.shared_ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS
-        == module.shared_ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS
+        == ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS
     )
     assert (
         module.shared_ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS
-        == frozenset({'bypass_actors'})
+        == ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS
     )
-    assert 'bypass_actors' in module.shared_ruleset_gate.SNAPSHOT_TOP_LEVEL_FIELDS
-    assert 'bypass_actors' not in module.shared_ruleset_gate.IGNORED_LIVE_FIELDS
+    assert module.shared_ruleset_gate.SNAPSHOT_TOP_LEVEL_FIELDS == ruleset_gate.SNAPSHOT_TOP_LEVEL_FIELDS
+    assert module.shared_ruleset_gate.IGNORED_LIVE_FIELDS == ruleset_gate.IGNORED_LIVE_FIELDS
 
 
 def test_audit_main_ruleset_workflow_contract() -> None:
