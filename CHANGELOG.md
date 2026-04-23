@@ -1,3 +1,8 @@
+# v1.5.1 on April 23, 2026
+- Correct the Origo Binance spot projection contract so `binance_spot_klines` and `aligned_1m_exchange` match the TDW 1-minute kline schema instead of the exchange-native 12-column shape.
+- Replace the single-source and aligned refresh SQL so both tables materialize the TDW analytics columns (`mean`, `std`, `median`, `iqr`, maker/liquidity fields) from raw spot trades.
+- Add a checked-in TDW contract fixture and replace the old exchange-native row tests with fixture-backed schema and row-parity tests for both projection tables.
+
 # v1.5.0 on April 23, 2026
 - Complete the first Binance spot Origo data-source template on top of `binance_daily_spot_trades` by adding the single-source `binance_spot_klines` projection and the shared `aligned_1m_exchange` projection layer.
 - Replace the old raw-only daily Origo schedule target with `refresh_binance_spot_data_source_job`, which materializes the raw daily insert plus both projection layers for the same partition.
