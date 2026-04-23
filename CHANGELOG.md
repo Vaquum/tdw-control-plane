@@ -1,3 +1,7 @@
+# v1.6.2 on April 23, 2026
+- Rename the two Origo source-template schedules to `daily_binance_spot_pipeline_schedule` and `daily_binance_futures_pipeline_schedule` so both surfaces include the source prefix explicitly.
+- Keep the existing spot and futures source-template jobs unchanged; this slice only renames the Dagster schedule definitions and their registration surface.
+
 # v1.6.1 on April 23, 2026
 - Add the repo-root `AGENTS.md` governance file with the operator-specified ten-law workflow contract and `zero-bang` approval authority.
 - Add `tests/tools/test_agents_contract.py` and extend `pr_checks_ruleset` so the checked-in `AGENTS.md` file identity and workflow coverage are mechanically enforced in CI.
