@@ -1,3 +1,8 @@
+# v1.5.0 on April 23, 2026
+- Complete the first Binance spot Origo data-source template on top of `binance_daily_spot_trades` by adding the single-source `binance_spot_klines` projection and the shared `aligned_1m_exchange` projection layer.
+- Replace the old raw-only daily Origo schedule target with `refresh_binance_spot_data_source_job`, which materializes the raw daily insert plus both projection layers for the same partition.
+- Add end-to-end `tests/origo_source_native/test_origo_binance_spot_data_source_template.py` proofs for table-name contracts, exact schema, exact Binance-derived 1-minute rows, aligned dataset-source rows, and same-partition rerun idempotency.
+
 # v1.4.1 on April 22, 2026
 - Sync `tests/fixtures/github/ruleset_live_unexpected_field.json` to the current 9-context protected-check set on `main`, including `pr_checks_lint` and `pr_checks_tests`.
 - Add `test_unexpected_field_fixture_preserves_required_contexts` so `pr_checks_ruleset` fails if that negative fixture ever drifts from the checked-in ruleset snapshot's required-status list.
