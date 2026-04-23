@@ -1,3 +1,5 @@
+from datetime import date, datetime, timedelta, timezone
+
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
@@ -11,12 +13,18 @@ from .create_binance_futures_klines_table_origo import (
 )
 from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_client
 from .daily_futures_trades_to_origo import daily_partitions
-from .refresh_binance_futures_klines_origo import (
-    _partition_date_from_context,
-    refresh_binance_futures_klines_origo,
-)
+from .refresh_binance_futures_klines_origo import refresh_binance_futures_klines_origo
 
 BINANCE_FUTURES_DATASET_SOURCE = 'binance_futures'
+
+
+def _partition_date_from_context(context: AssetExecutionContext) -> str:
+    partition_key = context.partition_key
+    if partition_key:
+        return date.fromisoformat(partition_key).isoformat()
+
+    target_date = datetime.now(timezone.utc) - timedelta(days=1)
+    return target_date.strftime('%Y-%m-%d')
 
 
 def _delete_partition_rows(
@@ -47,7 +55,18 @@ def _count_partition_rows(
           AND toDate(datetime) = toDate('{partition_date}')
         """
     )
-    return int(result[0][0])
+    if not isinstance(result, list) or not result:
+        raise TypeError(f'Expected row result from ClickHouse, got {type(result).__name__}')
+
+    row = result[0]
+    if not isinstance(row, tuple) or not row:
+        raise TypeError(f'Expected tuple row from ClickHouse, got {type(row).__name__}')
+
+    value = row[0]
+    if not isinstance(value, int):
+        raise TypeError(f'Expected int scalar from ClickHouse, got {type(value).__name__}')
+
+    return value
 
 
 def _insert_partition_rows(

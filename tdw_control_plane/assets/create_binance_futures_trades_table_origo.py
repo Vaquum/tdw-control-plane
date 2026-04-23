@@ -1,6 +1,7 @@
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
+from .create_binance_trades_table_origo import _database_exists, _table_exists
 from .create_origo_database import (
     ClickHouseSettings,
     _get_clickhouse_settings,
@@ -10,29 +11,6 @@ from .create_origo_database import (
 
 RAW_TABLE_NAME = 'binance_daily_futures_trades'
 LEDGER_TABLE_NAME = 'binance_daily_futures_trades_ingestion'
-
-
-def _database_exists(client: ClickhouseClient, database: str) -> bool:
-    result = client.execute(
-        f"""
-        SELECT count()
-        FROM system.databases
-        WHERE name = '{database}'
-        """
-    )
-    return bool(result[0][0])
-
-
-def _table_exists(client: ClickhouseClient, settings: ClickHouseSettings, table_name: str) -> bool:
-    result = client.execute(
-        f"""
-        SELECT count()
-        FROM system.tables
-        WHERE database = '{settings.database}'
-          AND name = '{table_name}'
-        """
-    )
-    return bool(result[0][0])
 
 
 def _create_raw_table(client: ClickhouseClient, settings: ClickHouseSettings) -> None:

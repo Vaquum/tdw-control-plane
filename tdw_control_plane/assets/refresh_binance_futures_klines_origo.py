@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
@@ -17,8 +17,8 @@ from .daily_futures_trades_to_origo import (
 
 def _partition_date_from_context(context: AssetExecutionContext) -> str:
     partition_key = context.partition_key
-    if partition_key is not None:
-        return partition_key
+    if partition_key:
+        return date.fromisoformat(partition_key).isoformat()
 
     target_date = datetime.now(timezone.utc) - timedelta(days=1)
     return target_date.strftime('%Y-%m-%d')
@@ -50,7 +50,18 @@ def _count_partition_rows(
         WHERE toDate(datetime) = toDate('{partition_date}')
         """
     )
-    return int(result[0][0])
+    if not isinstance(result, list) or not result:
+        raise TypeError(f'Expected row result from ClickHouse, got {type(result).__name__}')
+
+    row = result[0]
+    if not isinstance(row, tuple) or not row:
+        raise TypeError(f'Expected tuple row from ClickHouse, got {type(row).__name__}')
+
+    value = row[0]
+    if not isinstance(value, int):
+        raise TypeError(f'Expected int scalar from ClickHouse, got {type(value).__name__}')
+
+    return value
 
 
 def _insert_partition_rows(

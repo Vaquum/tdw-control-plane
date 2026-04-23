@@ -134,7 +134,27 @@ def _count_rows_for_day(client: ClickhouseClient, database: str, date_str: str) 
         WHERE toDate(datetime) = toDate('{date_str}')
         """
     )
-    return int(result[0][0])
+    if not isinstance(result, list) or not result:
+        raise TypeError(f'Expected row result from ClickHouse, got {type(result).__name__}')
+
+    row = result[0]
+    if not isinstance(row, tuple) or not row:
+        raise TypeError(f'Expected tuple row from ClickHouse, got {type(row).__name__}')
+
+    value = row[0]
+    if not isinstance(value, int):
+        raise TypeError(f'Expected int scalar from ClickHouse, got {type(value).__name__}')
+
+    return value
+
+
+def _partition_date_from_context(context: AssetExecutionContext) -> str:
+    partition_key = context.partition_key
+    if partition_key:
+        return date.fromisoformat(partition_key).isoformat()
+
+    target_date = datetime.now(timezone.utc) - timedelta(days=1)
+    return target_date.strftime('%Y-%m-%d')
 
 
 def _write_ingestion_ledger(
@@ -280,13 +300,7 @@ def _process_day(
 def insert_daily_binance_futures_trades_to_origo(
     context: AssetExecutionContext,
 ) -> dict[str, object]:
-    partition_date_str = context.partition_key
-    if partition_date_str is None:
-        target_date = datetime.now(timezone.utc) - timedelta(days=1)
-        date_str = target_date.strftime('%Y-%m-%d')
-    else:
-        date_str = partition_date_str
-
+    date_str = _partition_date_from_context(context)
     day_filename = f'BTCUSDT-trades-{date_str}.zip'
     context.log.info(f'Processing partition {date_str} using {day_filename}')
     return _process_day(context, day_filename=day_filename, date_str=date_str)
