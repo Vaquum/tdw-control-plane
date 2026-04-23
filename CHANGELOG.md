@@ -1,3 +1,7 @@
+# v1.6.1 on April 23, 2026
+- Add the repo-root `AGENTS.md` governance file with the operator-specified ten-law workflow contract and `zero-bang` approval authority.
+- Add `tests/tools/test_agents_contract.py` and extend `pr_checks_ruleset` so the checked-in `AGENTS.md` file identity and workflow coverage are mechanically enforced in CI.
+
 # v1.6.0 on April 23, 2026
 - Complete the Binance futures Origo data-source template on top of `binance_daily_futures_trades` by adding the single-source `binance_futures_klines` projection and the shared `aligned_1m_exchange` futures path.
 - Rename the generic spot schedule to `daily_spot_pipeline_schedule`, add `daily_futures_pipeline_schedule`, and wire `refresh_binance_futures_data_source_job` so spot and futures source-template automation follow the same naming law.
