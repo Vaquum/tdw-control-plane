@@ -1,3 +1,8 @@
+# v1.6.0 on April 23, 2026
+- Complete the Binance futures Origo data-source template on top of `binance_daily_futures_trades` by adding the single-source `binance_futures_klines` projection and the shared `aligned_1m_exchange` futures path.
+- Rename the generic spot schedule to `daily_spot_pipeline_schedule`, add `daily_futures_pipeline_schedule`, and wire `refresh_binance_futures_data_source_job` so spot and futures source-template automation follow the same naming law.
+- Add checked-in real Binance futures daily fixtures for both the headerless and headered source shapes, plus fixture-backed futures row/schema/idempotency tests that prove `aligned_1m_exchange` can hold both `binance_spot` and `binance_futures`.
+
 # v1.5.1 on April 23, 2026
 - Correct the Origo Binance spot projection contract so `binance_spot_klines` and `aligned_1m_exchange` match the TDW 1-minute kline schema instead of the exchange-native 12-column shape.
 - Replace the single-source and aligned refresh SQL so both tables materialize the TDW analytics columns (`mean`, `std`, `median`, `iqr`, maker/liquidity fields) from raw spot trades.
