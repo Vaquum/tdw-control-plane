@@ -16,6 +16,7 @@ from uuid import uuid4
 
 import pytest
 from clickhouse_driver import Client as ClickhouseClient
+from clickhouse_driver.errors import NetworkError
 from dagster import asset, materialize
 
 from .helpers import BINANCE_FIXTURE_ROOT, ORIGO_DATABASE
@@ -55,6 +56,9 @@ def _wait_for_clickhouse(host: str, port: int, user: str, password: str) -> None
             last_error = exc
             time.sleep(1)
         except EOFError as exc:
+            last_error = exc
+            time.sleep(1)
+        except NetworkError as exc:
             last_error = exc
             time.sleep(1)
         finally:
