@@ -6,6 +6,7 @@ import socket
 import subprocess
 import sys
 import time
+import types
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -15,7 +16,7 @@ from uuid import uuid4
 
 import pytest
 from clickhouse_driver import Client as ClickhouseClient
-from dagster import materialize
+from dagster import asset, materialize
 
 from .helpers import BINANCE_FIXTURE_ROOT, ORIGO_DATABASE
 
@@ -287,3 +288,28 @@ def query_origo(clickhouse_settings: dict[str, str]) -> Any:
         return _query_rows(clickhouse_settings, query)
 
     return _run
+
+
+@pytest.fixture()
+def origo_definitions_module(
+    monkeypatch: pytest.MonkeyPatch,
+    origo_test_env: dict[str, str],
+) -> Any:
+    stub_name = 'tdw_control_plane.assets.monthly_futures_agg_trades_to_tdw'
+    stub_module = types.ModuleType(stub_name)
+
+    @asset
+    def create_binance_futures_agg_trades_table() -> dict[str, str]:
+        return {'status': 'stubbed'}
+
+    @asset
+    def insert_monthly_binance_futures_agg_trades_to_tdw() -> dict[str, str]:
+        return {'status': 'stubbed'}
+
+    stub_module.create_binance_futures_agg_trades_table = create_binance_futures_agg_trades_table
+    stub_module.insert_monthly_binance_futures_agg_trades_to_tdw = (
+        insert_monthly_binance_futures_agg_trades_to_tdw
+    )
+    monkeypatch.setitem(sys.modules, stub_name, stub_module)
+
+    return _reload_module('tdw_control_plane.definitions')

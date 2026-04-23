@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 from .helpers import (
     ALIGNED_SCHEMA_COLUMNS,
     KLINE_SCHEMA_COLUMNS,
@@ -9,6 +7,21 @@ from .helpers import (
     load_expected_aligned_1m_exchange_rows,
     load_expected_binance_spot_kline_rows,
 )
+
+
+def _table_metadata(query_origo, table_name: str) -> tuple[str, str, str]:
+    rows = query_origo(
+        f"""
+        SELECT engine, partition_key, sorting_key
+        FROM system.tables
+        WHERE database = '{ORIGO_DATABASE}'
+          AND name = '{table_name}'
+        """
+    )
+
+    assert len(rows) == 1
+    engine, partition_key, sorting_key = rows[0]
+    return str(engine), str(partition_key), str(sorting_key)
 
 
 def test_binance_spot_klines_table_name_contract(origo_assets: dict[str, object]) -> None:
@@ -20,18 +33,18 @@ def test_aligned_1m_exchange_table_name_contract(origo_assets: dict[str, object]
 
 
 def test_daily_pipeline_schedule_targets_binance_spot_data_source_job(
+    origo_definitions_module,
 ) -> None:
-    definitions_text = (
-        Path(__file__).resolve().parents[2] / 'tdw_control_plane' / 'definitions.py'
-    ).read_text(encoding='utf-8')
+    schedule_def = origo_definitions_module.daily_pipeline_schedule
+    job_def = origo_definitions_module.defs.get_job_def('refresh_binance_spot_data_source_job')
+    node_names = set(job_def.graph.node_dict.keys())
 
-    assert "name=\"refresh_binance_spot_data_source_job\"" in definitions_text
-    assert 'selection=[' in definitions_text
-    assert '"insert_daily_binance_spot_trades_to_origo"' in definitions_text
-    assert '"refresh_binance_spot_klines_origo"' in definitions_text
-    assert '"refresh_aligned_1m_exchange_from_binance_spot_origo"' in definitions_text
-    assert 'job=refresh_binance_spot_data_source_job' in definitions_text
-    assert 'job=insert_daily_binance_spot_trades_to_origo_job' not in definitions_text
+    assert schedule_def.job.name == 'refresh_binance_spot_data_source_job'
+    assert node_names >= {
+        'insert_daily_binance_spot_trades_to_origo',
+        'refresh_binance_spot_klines_origo',
+        'refresh_aligned_1m_exchange_from_binance_spot_origo',
+    }
 
 
 def test_binance_spot_klines_schema_matches_exchange_contract(
@@ -49,6 +62,11 @@ def test_binance_spot_klines_schema_matches_exchange_contract(
     )
 
     assert [(name, type_name) for name, type_name, *_ in rows] == KLINE_SCHEMA_COLUMNS
+    assert _table_metadata(query_origo, origo_assets['KLINES_TABLE_NAME']) == (
+        'MergeTree',
+        'toYYYYMM(fromUnixTimestamp64Milli(open_time))',
+        'open_time',
+    )
 
 
 def test_binance_spot_klines_exact_rows_match_expected(
@@ -98,6 +116,11 @@ def test_aligned_1m_exchange_schema_adds_dataset_source_column(
     )
 
     assert [(name, type_name) for name, type_name, *_ in rows] == ALIGNED_SCHEMA_COLUMNS
+    assert _table_metadata(query_origo, origo_assets['ALIGNED_TABLE_NAME']) == (
+        'MergeTree',
+        'toYYYYMM(fromUnixTimestamp64Milli(open_time))',
+        'dataset_source, open_time',
+    )
 
 
 def test_aligned_1m_exchange_rows_from_binance_spot_match_expected(

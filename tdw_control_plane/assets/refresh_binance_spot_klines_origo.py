@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
+from .create_binance_trades_table_origo import RAW_TABLE_NAME
 from .create_binance_spot_klines_table_origo import (
     KLINES_TABLE_NAME,
     create_binance_spot_klines_table_origo,
@@ -70,7 +71,7 @@ def _insert_partition_rows(
             sumIf(quantity, is_buyer_maker = 0) AS taker_buy_base_asset_volume,
             sumIf(quote_quantity, is_buyer_maker = 0) AS taker_buy_quote_asset_volume,
             toFloat64(0) AS ignore
-        FROM {database}.binance_daily_spot_trades
+        FROM {database}.{RAW_TABLE_NAME}
         WHERE toDate(datetime) = toDate('{partition_date}')
         GROUP BY toStartOfMinute(datetime)
         ORDER BY open_time

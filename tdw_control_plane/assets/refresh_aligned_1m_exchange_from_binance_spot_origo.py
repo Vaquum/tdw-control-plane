@@ -1,5 +1,3 @@
-from datetime import datetime, timedelta, timezone
-
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
@@ -13,18 +11,12 @@ from .create_binance_spot_klines_table_origo import (
 )
 from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_client
 from .daily_trades_to_origo import daily_partitions
-from .refresh_binance_spot_klines_origo import refresh_binance_spot_klines_origo
+from .refresh_binance_spot_klines_origo import (
+    _partition_date_from_context,
+    refresh_binance_spot_klines_origo,
+)
 
 BINANCE_SPOT_DATASET_SOURCE = 'binance_spot'
-
-
-def _partition_date_from_context(context: AssetExecutionContext) -> str:
-    partition_key = context.partition_key
-    if partition_key is not None:
-        return partition_key
-
-    target_date = datetime.now(timezone.utc) - timedelta(days=1)
-    return target_date.strftime('%Y-%m-%d')
 
 
 def _delete_partition_rows(
