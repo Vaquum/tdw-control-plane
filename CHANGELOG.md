@@ -1,3 +1,8 @@
+# v1.6.3 on April 23, 2026
+- Add `audit_main_ruleset`, a privileged post-merge `main` workflow that audits full live parity of ruleset `5406599`, including `bypass_actors`, against `.github/rulesets/main.json`.
+- Add `tools/privileged_ruleset_audit.py` and `tests/tools/test_privileged_ruleset_audit.py`, including the fail-loud contract for missing or underscoped visibility of `bypass_actors` and the live-payload snapshot on failure.
+- Extend `pr_checks_ruleset` so the privileged-audit workflow and tool contract are mechanically protected by required CI before rollout.
+
 # v1.6.2 on April 23, 2026
 - Rename the two Origo source-template schedules to `daily_binance_spot_pipeline_schedule` and `daily_binance_futures_pipeline_schedule` so both surfaces include the source prefix explicitly.
 - Keep the existing spot and futures source-template jobs unchanged; this slice only renames the Dagster schedule definitions and their registration surface.
