@@ -7,6 +7,8 @@ from typing import Any
 
 from dagster import SkipReason, build_schedule_context
 
+from tdw_control_plane import origo_source_schedule as origo_source_schedule_module
+
 from .helpers import (
     BINANCE_FUTURES_DATASET_SOURCE,
     BINANCE_SPOT_DATASET_SOURCE,
@@ -98,18 +100,18 @@ def test_daily_binance_futures_pipeline_schedule_returns_partitioned_catch_up_ru
     existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(14)}
     existing_days -= missing_days
 
-    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
     monkeypatch.setattr(
-        origo_definitions_module,
+        origo_source_schedule_module,
         '_latest_source_day',
         lambda table_name, dataset_source: date(2024, 1, 10),
     )
     monkeypatch.setattr(
-        origo_definitions_module,
-        '_existing_source_days_in_range',
+        origo_source_schedule_module,
+        '_existing_source_days',
         lambda table_name, dataset_source, start_date, end_date: existing_days,
     )
-    monkeypatch.setattr(origo_definitions_module, '_binance_archive_available', lambda url: True)
+    monkeypatch.setattr(origo_source_schedule_module, '_archive_available', lambda url: True)
 
     result = _evaluate_schedule(
         origo_definitions_module.daily_binance_futures_pipeline_schedule,
@@ -128,9 +130,9 @@ def test_daily_binance_futures_pipeline_schedule_skips_when_recent_gap_exceeds_a
     monkeypatch,
     origo_definitions_module,
 ) -> None:
-    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
     monkeypatch.setattr(
-        origo_definitions_module,
+        origo_source_schedule_module,
         '_latest_source_day',
         lambda table_name, dataset_source: date(2023, 12, 30),
     )
@@ -150,18 +152,18 @@ def test_daily_binance_futures_pipeline_schedule_does_not_launch_non_partitioned
 ) -> None:
     existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(13)}
 
-    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
     monkeypatch.setattr(
-        origo_definitions_module,
+        origo_source_schedule_module,
         '_latest_source_day',
         lambda table_name, dataset_source: date(2024, 1, 13),
     )
     monkeypatch.setattr(
-        origo_definitions_module,
-        '_existing_source_days_in_range',
+        origo_source_schedule_module,
+        '_existing_source_days',
         lambda table_name, dataset_source, start_date, end_date: existing_days,
     )
-    monkeypatch.setattr(origo_definitions_module, '_binance_archive_available', lambda url: True)
+    monkeypatch.setattr(origo_source_schedule_module, '_archive_available', lambda url: True)
 
     result = _evaluate_schedule(
         origo_definitions_module.daily_binance_futures_pipeline_schedule,
@@ -185,18 +187,18 @@ def test_source_template_schedule_filters_unavailable_archives(
         checked_urls.append(url)
         return url.endswith('2024-01-05.zip')
 
-    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
     monkeypatch.setattr(
-        origo_definitions_module,
+        origo_source_schedule_module,
         '_latest_source_day',
         lambda table_name, dataset_source: date(2024, 1, 10),
     )
     monkeypatch.setattr(
-        origo_definitions_module,
-        '_existing_source_days_in_range',
+        origo_source_schedule_module,
+        '_existing_source_days',
         lambda table_name, dataset_source, start_date, end_date: existing_days,
     )
-    monkeypatch.setattr(origo_definitions_module, '_binance_archive_available', archive_available)
+    monkeypatch.setattr(origo_source_schedule_module, '_archive_available', archive_available)
 
     result = _evaluate_schedule(
         origo_definitions_module.daily_binance_futures_pipeline_schedule,

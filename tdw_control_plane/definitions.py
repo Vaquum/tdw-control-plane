@@ -8,7 +8,7 @@
 # 6. If applicable, add a schedule for the job and add it to the schedules list
 
 import os
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 from clickhouse_driver import Client as ClickhouseClient
@@ -76,6 +76,7 @@ from .assets.refresh_aligned_1m_exchange_from_binance_spot_origo import (
 from .assets.refresh_aligned_1m_exchange_from_binance_futures_origo import (
     refresh_aligned_1m_exchange_from_binance_futures_origo,
 )
+from .origo_source_schedule import origo_source_schedule_requests
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -332,73 +333,6 @@ def _existing_days_in_range(table_name: str, start_date: str, end_date: str) -> 
             client.disconnect()
 
 
-def _existing_source_days_in_range(
-    table_name: str,
-    dataset_source: str,
-    start_date: str,
-    end_date: str,
-) -> set[date]:
-    client = None
-    try:
-        client = _get_clickhouse_client()
-        result: object = client.execute(
-            f"""
-            SELECT DISTINCT toDate(datetime) AS day
-            FROM {CLICKHOUSE_DATABASE}.{table_name}
-            WHERE dataset_source = '{dataset_source}'
-              AND toDate(datetime) >= toDate('{start_date}')
-              AND toDate(datetime) <= toDate('{end_date}')
-        """
-        )
-        if not isinstance(result, list):
-            raise TypeError(f"Expected row result from ClickHouse, got {type(result).__name__}")
-
-        days: set[date] = set()
-        for row in result:
-            if not isinstance(row, tuple) or not row:
-                raise TypeError(f"Expected tuple row from ClickHouse, got {type(row).__name__}")
-            value = row[0]
-            if value is not None:
-                if not isinstance(value, date) or isinstance(value, datetime):
-                    raise TypeError(
-                        f"Expected date scalar from ClickHouse, got {type(value).__name__}"
-                    )
-                days.add(value)
-        return days
-    finally:
-        if client:
-            client.disconnect()
-
-
-def _latest_source_day(table_name: str, dataset_source: str) -> date | None:
-    client = None
-    try:
-        client = _get_clickhouse_client()
-        result: object = client.execute(
-            f"""
-            SELECT max(toDate(datetime))
-            FROM {CLICKHOUSE_DATABASE}.{table_name}
-            WHERE dataset_source = '{dataset_source}'
-        """
-        )
-        if not isinstance(result, list) or not result:
-            raise TypeError(f"Expected row result from ClickHouse, got {type(result).__name__}")
-
-        row = result[0]
-        if not isinstance(row, tuple) or not row:
-            raise TypeError(f"Expected tuple row from ClickHouse, got {type(row).__name__}")
-
-        value = row[0]
-        if value is None:
-            return None
-        if not isinstance(value, date) or isinstance(value, datetime):
-            raise TypeError(f"Expected date scalar from ClickHouse, got {type(value).__name__}")
-        return value
-    finally:
-        if client:
-            client.disconnect()
-
-
 def _next_daily_overlay_start_day():
     latest_monthly_day = _latest_day_in_table("binance_trades")
     if latest_monthly_day is None:
@@ -420,71 +354,19 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
     return context.scheduled_execution_time or datetime.now(timezone.utc)
 
 
-def _origo_source_template_run_requests(
-    context: ScheduleEvaluationContext,
-    *,
-    final_table_name: str,
-    dataset_source: str,
-    run_key_prefix: str,
-    file_url_prefix: str,
-) -> list[RunRequest] | SkipReason:
-    scheduled_time = _scheduled_time(context)
-    end_date = (scheduled_time - timedelta(days=1)).date()
-
-    if not _table_exists(final_table_name):
-        return SkipReason(f"{CLICKHOUSE_DATABASE}.{final_table_name} does not exist yet.")
-
-    latest_day = _latest_source_day(final_table_name, dataset_source)
-    if (
-        latest_day is not None
-        and latest_day < end_date - timedelta(days=MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS)
-    ):
-        return SkipReason(
-            f"{dataset_source} aligned daily gap is larger than the automated backfill threshold; trigger a manual backfill."
-        )
-
-    start_date = end_date - timedelta(days=MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS - 1)
-    existing_days = _existing_source_days_in_range(
-        final_table_name,
-        dataset_source,
-        start_date.isoformat(),
-        end_date.isoformat(),
-    )
-
-    run_requests = []
-    current_day = start_date
-    while current_day <= end_date and len(run_requests) < MAX_DAILY_BACKFILL_RUNS_PER_TICK:
-        if current_day not in existing_days:
-            target_date = current_day.isoformat()
-            file_url = f"{file_url_prefix}{target_date}.zip"
-            if _binance_archive_available(file_url):
-                run_requests.append(
-                    RunRequest(
-                        partition_key=target_date,
-                        run_key=f"{run_key_prefix}::{target_date}",
-                    )
-                )
-        current_day += timedelta(days=1)
-
-    if not run_requests:
-        return SkipReason(
-            f"No available Binance daily archives were found for missing {dataset_source} aligned days."
-        )
-
-    return run_requests
-
-
 @schedule(
     job=refresh_binance_spot_data_source_job,
     cron_schedule="0 1 * * *",
     execution_timezone="UTC")
 def daily_binance_spot_pipeline_schedule(context: ScheduleEvaluationContext):
-    return _origo_source_template_run_requests(
+    return origo_source_schedule_requests(
         context,
-        final_table_name="aligned_1m_exchange",
+        table_name="aligned_1m_exchange",
         dataset_source="binance_spot",
         run_key_prefix="binance_spot_data_source",
         file_url_prefix="https://data.binance.vision/data/spot/daily/trades/BTCUSDT/BTCUSDT-trades-",
+        max_gap_days=MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS,
+        max_runs=MAX_DAILY_BACKFILL_RUNS_PER_TICK,
     )
 
 
@@ -493,12 +375,14 @@ def daily_binance_spot_pipeline_schedule(context: ScheduleEvaluationContext):
     cron_schedule="0 1 * * *",
     execution_timezone="UTC")
 def daily_binance_futures_pipeline_schedule(context: ScheduleEvaluationContext):
-    return _origo_source_template_run_requests(
+    return origo_source_schedule_requests(
         context,
-        final_table_name="aligned_1m_exchange",
+        table_name="aligned_1m_exchange",
         dataset_source="binance_futures",
         run_key_prefix="binance_futures_data_source",
         file_url_prefix="https://data.binance.vision/data/futures/um/daily/trades/BTCUSDT/BTCUSDT-trades-",
+        max_gap_days=MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS,
+        max_runs=MAX_DAILY_BACKFILL_RUNS_PER_TICK,
     )
 
 
