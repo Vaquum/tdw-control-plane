@@ -76,7 +76,7 @@ from .assets.refresh_aligned_1m_exchange_from_binance_spot_origo import (
 from .assets.refresh_aligned_1m_exchange_from_binance_futures_origo import (
     refresh_aligned_1m_exchange_from_binance_futures_origo,
 )
-from .origo_source_schedule import origo_source_schedule_requests
+from .schedules.origo_source import origo_source_schedule_requests
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))

@@ -7,7 +7,7 @@ from typing import Any
 
 from dagster import SkipReason, build_schedule_context
 
-from tdw_control_plane import origo_source_schedule as origo_source_schedule_module
+from tdw_control_plane.schedules import origo_source as origo_source_schedule_module
 
 from .helpers import (
     BINANCE_FUTURES_DATASET_SOURCE,
