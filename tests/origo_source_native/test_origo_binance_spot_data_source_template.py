@@ -55,9 +55,17 @@ def _rows_to_dicts(columns: list[str], rows: list[tuple[Any, ...]]) -> list[dict
     ]
 
 
-def _evaluate_schedule(schedule_def, scheduled_time: datetime) -> object:
-    context = build_schedule_context(scheduled_execution_time=scheduled_time)
-    return schedule_def._execution_fn.decorated_fn(context)
+def _evaluate_schedule(origo_definitions_module, schedule_def, scheduled_time: datetime) -> object:
+    context = build_schedule_context(
+        scheduled_execution_time=scheduled_time,
+        repository_def=origo_definitions_module.defs.get_repository_def(),
+    )
+    result = schedule_def.evaluate_tick(context)
+    if result.run_requests:
+        return result.run_requests
+    if result.skip_message:
+        return SkipReason(result.skip_message)
+    return []
 
 
 def test_binance_spot_klines_table_name_contract(origo_assets: dict[str, object]) -> None:
@@ -107,6 +115,7 @@ def test_daily_binance_spot_pipeline_schedule_returns_partitioned_catch_up_run_r
     monkeypatch.setattr(origo_source_schedule_module, '_archive_available', lambda url: True)
 
     result = _evaluate_schedule(
+        origo_definitions_module,
         origo_definitions_module.daily_binance_spot_pipeline_schedule,
         datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
     )
@@ -131,6 +140,7 @@ def test_daily_binance_spot_pipeline_schedule_skips_when_recent_gap_exceeds_auto
     )
 
     result = _evaluate_schedule(
+        origo_definitions_module,
         origo_definitions_module.daily_binance_spot_pipeline_schedule,
         datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
     )
@@ -159,6 +169,7 @@ def test_daily_binance_spot_pipeline_schedule_does_not_launch_non_partitioned_ru
     monkeypatch.setattr(origo_source_schedule_module, '_archive_available', lambda url: True)
 
     result = _evaluate_schedule(
+        origo_definitions_module,
         origo_definitions_module.daily_binance_spot_pipeline_schedule,
         datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
     )
