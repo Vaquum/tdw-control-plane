@@ -1,3 +1,7 @@
+# v1.6.3 on April 25, 2026
+- Make the two daily Binance Origo source-template schedules launch partitioned catch-up runs instead of non-partitioned empty-config runs.
+- Keep the daily spot and futures schedules enabled while bounding automated catch-up with the existing daily backfill limits and skipping loud when manual backfill is required.
+
 # v1.6.2 on April 23, 2026
 - Rename the two Origo source-template schedules to `daily_binance_spot_pipeline_schedule` and `daily_binance_futures_pipeline_schedule` so both surfaces include the source prefix explicitly.
 - Keep the existing spot and futures source-template jobs unchanged; this slice only renames the Dagster schedule definitions and their registration surface.

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+
+from dagster import SkipReason, build_schedule_context
 
 from .helpers import (
     BINANCE_FUTURES_DATASET_SOURCE,
@@ -58,6 +60,11 @@ def _rows_to_dicts(columns: list[str], rows: list[tuple[Any, ...]]) -> list[dict
     ]
 
 
+def _evaluate_schedule(schedule_def, scheduled_time: datetime) -> object:
+    context = build_schedule_context(scheduled_execution_time=scheduled_time)
+    return schedule_def._execution_fn.decorated_fn(context)
+
+
 def test_binance_daily_futures_trades_table_name_contract(origo_assets: dict[str, object]) -> None:
     assert origo_assets['FUTURES_RAW_TABLE_NAME'] == 'binance_daily_futures_trades'
     assert origo_assets['FUTURES_LEDGER_TABLE_NAME'] == 'binance_daily_futures_trades_ingestion'
@@ -81,6 +88,127 @@ def test_daily_binance_futures_pipeline_schedule_targets_binance_futures_data_so
         'refresh_binance_futures_klines_origo',
         'refresh_aligned_1m_exchange_from_binance_futures_origo',
     }
+
+
+def test_daily_binance_futures_pipeline_schedule_returns_partitioned_catch_up_run_requests(
+    monkeypatch,
+    origo_definitions_module,
+) -> None:
+    missing_days = {date(2024, 1, 12), date(2024, 1, 14)}
+    existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(14)}
+    existing_days -= missing_days
+
+    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_latest_source_day',
+        lambda table_name, dataset_source: date(2024, 1, 10),
+    )
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_existing_source_days_in_range',
+        lambda table_name, dataset_source, start_date, end_date: existing_days,
+    )
+    monkeypatch.setattr(origo_definitions_module, '_binance_archive_available', lambda url: True)
+
+    result = _evaluate_schedule(
+        origo_definitions_module.daily_binance_futures_pipeline_schedule,
+        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
+    )
+
+    assert isinstance(result, list)
+    assert [request.partition_key for request in result] == ['2024-01-12', '2024-01-14']
+    assert [request.run_key for request in result] == [
+        'binance_futures_data_source::2024-01-12',
+        'binance_futures_data_source::2024-01-14',
+    ]
+
+
+def test_daily_binance_futures_pipeline_schedule_skips_when_recent_gap_exceeds_automated_limit(
+    monkeypatch,
+    origo_definitions_module,
+) -> None:
+    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_latest_source_day',
+        lambda table_name, dataset_source: date(2023, 12, 30),
+    )
+
+    result = _evaluate_schedule(
+        origo_definitions_module.daily_binance_futures_pipeline_schedule,
+        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
+    )
+
+    assert isinstance(result, SkipReason)
+    assert 'manual backfill' in result.skip_message
+
+
+def test_daily_binance_futures_pipeline_schedule_does_not_launch_non_partitioned_runs(
+    monkeypatch,
+    origo_definitions_module,
+) -> None:
+    existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(13)}
+
+    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_latest_source_day',
+        lambda table_name, dataset_source: date(2024, 1, 13),
+    )
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_existing_source_days_in_range',
+        lambda table_name, dataset_source, start_date, end_date: existing_days,
+    )
+    monkeypatch.setattr(origo_definitions_module, '_binance_archive_available', lambda url: True)
+
+    result = _evaluate_schedule(
+        origo_definitions_module.daily_binance_futures_pipeline_schedule,
+        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
+    )
+
+    assert result != {}
+    assert isinstance(result, list)
+    assert [request.partition_key for request in result] == ['2024-01-14']
+
+
+def test_source_template_schedule_filters_unavailable_archives(
+    monkeypatch,
+    origo_definitions_module,
+) -> None:
+    existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(14)}
+    existing_days -= {date(2024, 1, 5), date(2024, 1, 7)}
+    checked_urls = []
+
+    def archive_available(url: str) -> bool:
+        checked_urls.append(url)
+        return url.endswith('2024-01-05.zip')
+
+    monkeypatch.setattr(origo_definitions_module, '_table_exists', lambda table_name: True)
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_latest_source_day',
+        lambda table_name, dataset_source: date(2024, 1, 10),
+    )
+    monkeypatch.setattr(
+        origo_definitions_module,
+        '_existing_source_days_in_range',
+        lambda table_name, dataset_source, start_date, end_date: existing_days,
+    )
+    monkeypatch.setattr(origo_definitions_module, '_binance_archive_available', archive_available)
+
+    result = _evaluate_schedule(
+        origo_definitions_module.daily_binance_futures_pipeline_schedule,
+        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
+    )
+
+    assert isinstance(result, list)
+    assert [request.partition_key for request in result] == ['2024-01-05']
+    assert checked_urls == [
+        'https://data.binance.vision/data/futures/um/daily/trades/BTCUSDT/BTCUSDT-trades-2024-01-05.zip',
+        'https://data.binance.vision/data/futures/um/daily/trades/BTCUSDT/BTCUSDT-trades-2024-01-07.zip',
+    ]
 
 
 def test_binance_source_template_schedules_are_registered_in_defs(
