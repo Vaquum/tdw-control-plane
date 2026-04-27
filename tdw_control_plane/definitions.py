@@ -14,11 +14,13 @@ import requests
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import (
     AssetKey,
+    DefaultScheduleStatus,
     Definitions,
     RunRequest,
     ScheduleEvaluationContext,
     SkipReason,
     asset_sensor,
+    build_schedule_from_partitioned_job,
     define_asset_job,
     schedule,
 )
@@ -76,7 +78,6 @@ from .assets.refresh_aligned_1m_exchange_from_binance_spot_origo import (
 from .assets.refresh_aligned_1m_exchange_from_binance_futures_origo import (
     refresh_aligned_1m_exchange_from_binance_futures_origo,
 )
-from .schedules.origo_source import origo_source_schedule_requests
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -354,36 +355,20 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
     return context.scheduled_execution_time or datetime.now(timezone.utc)
 
 
-@schedule(
-    job=refresh_binance_spot_data_source_job,
-    cron_schedule="0 1 * * *",
-    execution_timezone="UTC")
-def daily_binance_spot_pipeline_schedule(context: ScheduleEvaluationContext):
-    return origo_source_schedule_requests(
-        context,
-        table_name="aligned_1m_exchange",
-        dataset_source="binance_spot",
-        run_key_prefix="binance_spot_data_source",
-        file_url_prefix="https://data.binance.vision/data/spot/daily/trades/BTCUSDT/BTCUSDT-trades-",
-        max_gap_days=MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS,
-        max_runs=MAX_DAILY_BACKFILL_RUNS_PER_TICK,
-    )
+daily_binance_spot_pipeline_schedule = build_schedule_from_partitioned_job(
+    refresh_binance_spot_data_source_job,
+    name="daily_binance_spot_pipeline_schedule",
+    hour_of_day=1,
+    default_status=DefaultScheduleStatus.RUNNING,
+)
 
 
-@schedule(
-    job=refresh_binance_futures_data_source_job,
-    cron_schedule="0 1 * * *",
-    execution_timezone="UTC")
-def daily_binance_futures_pipeline_schedule(context: ScheduleEvaluationContext):
-    return origo_source_schedule_requests(
-        context,
-        table_name="aligned_1m_exchange",
-        dataset_source="binance_futures",
-        run_key_prefix="binance_futures_data_source",
-        file_url_prefix="https://data.binance.vision/data/futures/um/daily/trades/BTCUSDT/BTCUSDT-trades-",
-        max_gap_days=MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS,
-        max_runs=MAX_DAILY_BACKFILL_RUNS_PER_TICK,
-    )
+daily_binance_futures_pipeline_schedule = build_schedule_from_partitioned_job(
+    refresh_binance_futures_data_source_job,
+    name="daily_binance_futures_pipeline_schedule",
+    hour_of_day=1,
+    default_status=DefaultScheduleStatus.RUNNING,
+)
 
 
 @schedule(

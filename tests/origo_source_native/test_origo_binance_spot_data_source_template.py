@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from dagster import SkipReason, build_schedule_context
-
-from tdw_control_plane.schedules import origo_source as origo_source_schedule_module
+from dagster import DefaultScheduleStatus, build_schedule_context
 
 from .helpers import BINANCE_SPOT_DATASET_SOURCE, ORIGO_DATABASE
 
@@ -55,17 +53,19 @@ def _rows_to_dicts(columns: list[str], rows: list[tuple[Any, ...]]) -> list[dict
     ]
 
 
-def _evaluate_schedule(origo_definitions_module, schedule_def, scheduled_time: datetime) -> object:
+def _evaluate_schedule(
+    origo_definitions_module,
+    schedule_name: str,
+    scheduled_time: datetime,
+) -> object:
+    repository_def = origo_definitions_module.defs.get_repository_def()
     context = build_schedule_context(
         scheduled_execution_time=scheduled_time,
-        repository_def=origo_definitions_module.defs.get_repository_def(),
+        repository_def=repository_def,
     )
+    schedule_def = repository_def.get_schedule_def(schedule_name)
     result = schedule_def.evaluate_tick(context)
-    if result.run_requests:
-        return result.run_requests
-    if result.skip_message:
-        return SkipReason(result.skip_message)
-    return []
+    return result.run_requests
 
 
 def test_binance_spot_klines_table_name_contract(origo_assets: dict[str, object]) -> None:
@@ -80,12 +80,17 @@ def test_daily_binance_spot_pipeline_schedule_targets_binance_spot_data_source_j
     origo_definitions_module,
 ) -> None:
     schedule_def = origo_definitions_module.daily_binance_spot_pipeline_schedule
+    resolved_schedule_def = origo_definitions_module.defs.get_repository_def().get_schedule_def(
+        'daily_binance_spot_pipeline_schedule'
+    )
     job_def = origo_definitions_module.defs.get_job_def('refresh_binance_spot_data_source_job')
     node_names = set(job_def.graph.node_dict.keys())
 
     assert not hasattr(origo_definitions_module, 'daily_pipeline_schedule')
     assert not hasattr(origo_definitions_module, 'daily_spot_pipeline_schedule')
     assert schedule_def.job.name == 'refresh_binance_spot_data_source_job'
+    assert resolved_schedule_def.execution_timezone == 'UTC'
+    assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert node_names >= {
         'insert_daily_binance_spot_trades_to_origo',
         'refresh_binance_spot_klines_origo',
@@ -93,90 +98,36 @@ def test_daily_binance_spot_pipeline_schedule_targets_binance_spot_data_source_j
     }
 
 
-def test_daily_binance_spot_pipeline_schedule_returns_partitioned_catch_up_run_requests(
-    monkeypatch,
+def test_daily_binance_spot_pipeline_schedule_requests_latest_daily_partition(
     origo_definitions_module,
+    materialize_binance_spot_data_source_assets,
+    query_origo,
+    origo_assets: dict[str, object],
 ) -> None:
-    missing_days = {date(2024, 1, 12), date(2024, 1, 14)}
-    existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(14)}
-    existing_days -= missing_days
-
-    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
-    monkeypatch.setattr(
-        origo_source_schedule_module,
-        '_latest_source_day',
-        lambda table_name, dataset_source: date(2024, 1, 10),
-    )
-    monkeypatch.setattr(
-        origo_source_schedule_module,
-        '_existing_source_days',
-        lambda table_name, dataset_source, start_date, end_date: existing_days,
-    )
-    monkeypatch.setattr(origo_source_schedule_module, '_archive_available', lambda url: True)
-
     result = _evaluate_schedule(
         origo_definitions_module,
-        origo_definitions_module.daily_binance_spot_pipeline_schedule,
-        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
+        'daily_binance_spot_pipeline_schedule',
+        datetime(2024, 1, 2, 1, tzinfo=timezone.utc),
     )
 
     assert isinstance(result, list)
-    assert [request.partition_key for request in result] == ['2024-01-12', '2024-01-14']
-    assert [request.run_key for request in result] == [
-        'binance_spot_data_source::2024-01-12',
-        'binance_spot_data_source::2024-01-14',
-    ]
+    assert [request.partition_key for request in result] == ['2024-01-01']
+    assert [request.run_key for request in result] == ['2024-01-01']
 
-
-def test_daily_binance_spot_pipeline_schedule_skips_when_recent_gap_exceeds_automated_limit(
-    monkeypatch,
-    origo_definitions_module,
-) -> None:
-    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
-    monkeypatch.setattr(
-        origo_source_schedule_module,
-        '_latest_source_day',
-        lambda table_name, dataset_source: date(2023, 12, 30),
+    materialize_result = materialize_binance_spot_data_source_assets(
+        partition_key=result[0].partition_key
     )
+    assert materialize_result.success
 
-    result = _evaluate_schedule(
-        origo_definitions_module,
-        origo_definitions_module.daily_binance_spot_pipeline_schedule,
-        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
+    rows = query_origo(
+        f"""
+        SELECT count()
+        FROM {ORIGO_DATABASE}.{origo_assets['ALIGNED_TABLE_NAME']}
+        WHERE dataset_source = '{BINANCE_SPOT_DATASET_SOURCE}'
+          AND toDate(datetime) = toDate('{result[0].partition_key}')
+        """
     )
-
-    assert isinstance(result, SkipReason)
-    assert 'manual backfill' in result.skip_message
-
-
-def test_daily_binance_spot_pipeline_schedule_does_not_launch_non_partitioned_runs(
-    monkeypatch,
-    origo_definitions_module,
-) -> None:
-    existing_days = {date(2024, 1, 1) + timedelta(days=offset) for offset in range(13)}
-
-    monkeypatch.setattr(origo_source_schedule_module, '_table_exists', lambda table_name: True)
-    monkeypatch.setattr(
-        origo_source_schedule_module,
-        '_latest_source_day',
-        lambda table_name, dataset_source: date(2024, 1, 13),
-    )
-    monkeypatch.setattr(
-        origo_source_schedule_module,
-        '_existing_source_days',
-        lambda table_name, dataset_source, start_date, end_date: existing_days,
-    )
-    monkeypatch.setattr(origo_source_schedule_module, '_archive_available', lambda url: True)
-
-    result = _evaluate_schedule(
-        origo_definitions_module,
-        origo_definitions_module.daily_binance_spot_pipeline_schedule,
-        datetime(2024, 1, 15, 1, tzinfo=timezone.utc),
-    )
-
-    assert result != {}
-    assert isinstance(result, list)
-    assert [request.partition_key for request in result] == ['2024-01-14']
+    assert rows[0][0] > 0
 
 
 def test_binance_spot_klines_schema_matches_tdw_contract_fixture(

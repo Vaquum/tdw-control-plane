@@ -400,13 +400,8 @@ def query_origo(clickhouse_settings: dict[str, str]) -> Any:
 @pytest.fixture()
 def origo_definitions_module(
     monkeypatch: pytest.MonkeyPatch,
+    origo_test_env: dict[str, str],
 ) -> Any:
-    monkeypatch.setenv('CLICKHOUSE_HOST', '127.0.0.1')
-    monkeypatch.setenv('CLICKHOUSE_PORT', '9000')
-    monkeypatch.setenv('CLICKHOUSE_USER', 'default')
-    monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
-    monkeypatch.setenv('CLICKHOUSE_DATABASE', ORIGO_DATABASE)
-
     stub_name = 'tdw_control_plane.assets.monthly_futures_agg_trades_to_tdw'
     stub_module = types.ModuleType(stub_name)
 
