@@ -1,3 +1,6 @@
+# v1.6.5 on April 28, 2026
+- Move the default-running daily Binance spot Origo source schedule to `04:00 UTC` while leaving the futures schedule at `10:00 UTC`.
+
 # v1.6.4 on April 28, 2026
 - Move the default-running daily Binance Origo source schedules to `10:00 UTC` so routine automation runs after observed Binance archive publication.
 - Add bounded hourly Dagster retries to the spot and futures daily archive ingest assets for late archive publication.
