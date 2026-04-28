@@ -89,7 +89,7 @@ def test_daily_binance_spot_pipeline_schedule_targets_binance_spot_data_source_j
     assert not hasattr(origo_definitions_module, 'daily_pipeline_schedule')
     assert not hasattr(origo_definitions_module, 'daily_spot_pipeline_schedule')
     assert schedule_def.job.name == 'refresh_binance_spot_data_source_job'
-    assert resolved_schedule_def.cron_schedule == '0 10 * * *'
+    assert resolved_schedule_def.cron_schedule == '0 4 * * *'
     assert resolved_schedule_def.execution_timezone == 'UTC'
     assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert node_names >= {
@@ -108,7 +108,7 @@ def test_daily_binance_spot_pipeline_schedule_requests_latest_daily_partition(
     result = _evaluate_schedule(
         origo_definitions_module,
         'daily_binance_spot_pipeline_schedule',
-        datetime(2024, 1, 2, 10, tzinfo=timezone.utc),
+        datetime(2024, 1, 2, 4, tzinfo=timezone.utc),
     )
 
     assert isinstance(result, list)
