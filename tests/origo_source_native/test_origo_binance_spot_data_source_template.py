@@ -89,6 +89,7 @@ def test_daily_binance_spot_pipeline_schedule_targets_binance_spot_data_source_j
     assert not hasattr(origo_definitions_module, 'daily_pipeline_schedule')
     assert not hasattr(origo_definitions_module, 'daily_spot_pipeline_schedule')
     assert schedule_def.job.name == 'refresh_binance_spot_data_source_job'
+    assert resolved_schedule_def.cron_schedule == '0 10 * * *'
     assert resolved_schedule_def.execution_timezone == 'UTC'
     assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert node_names >= {
@@ -107,7 +108,7 @@ def test_daily_binance_spot_pipeline_schedule_requests_latest_daily_partition(
     result = _evaluate_schedule(
         origo_definitions_module,
         'daily_binance_spot_pipeline_schedule',
-        datetime(2024, 1, 2, 1, tzinfo=timezone.utc),
+        datetime(2024, 1, 2, 10, tzinfo=timezone.utc),
     )
 
     assert isinstance(result, list)
@@ -288,6 +289,16 @@ def test_same_partition_rerun_is_idempotent_across_single_source_and_aligned(
     assert len(second_kline_rows) == 1
     assert len(second_aligned_rows) == 1
     assert second_aligned_rows[0][0] == BINANCE_SPOT_DATASET_SOURCE
+
+
+def test_daily_binance_spot_ingest_retries_hourly_for_late_binance_archives(
+    origo_assets: dict[str, object],
+) -> None:
+    retry_policy = origo_assets['insert_daily_binance_spot_trades_to_origo'].op.retry_policy
+
+    assert retry_policy is not None
+    assert retry_policy.max_retries == 23
+    assert retry_policy.delay == 3600
 
 
 def test_refresh_assets_declare_immediate_dependencies(origo_assets: dict[str, object]) -> None:
