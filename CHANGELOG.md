@@ -1,3 +1,7 @@
+# v1.6.4 on April 28, 2026
+- Move the default-running daily Binance Origo source schedules to `10:00 UTC` so routine automation runs after observed Binance archive publication.
+- Add bounded hourly Dagster retries to the spot and futures daily archive ingest assets for late archive publication.
+
 # v1.6.3 on April 25, 2026
 - Replace the two daily Binance Origo source-template schedules with Dagster partitioned-job schedules that request the latest daily partition instead of launching non-partitioned empty-config runs.
 - Start the daily spot and futures schedules enabled so Dagster owns routine daily automation while partition backfills stay on Dagster's built-in backfill path.

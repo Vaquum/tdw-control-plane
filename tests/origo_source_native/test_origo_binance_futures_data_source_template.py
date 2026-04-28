@@ -96,6 +96,7 @@ def test_daily_binance_futures_pipeline_schedule_targets_binance_futures_data_so
 
     assert not hasattr(origo_definitions_module, 'daily_futures_pipeline_schedule')
     assert schedule_def.job.name == 'refresh_binance_futures_data_source_job'
+    assert resolved_schedule_def.cron_schedule == '0 10 * * *'
     assert resolved_schedule_def.execution_timezone == 'UTC'
     assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert node_names >= {
@@ -114,7 +115,7 @@ def test_daily_binance_futures_pipeline_schedule_requests_latest_daily_partition
     result = _evaluate_schedule(
         origo_definitions_module,
         'daily_binance_futures_pipeline_schedule',
-        datetime(2019, 9, 9, 1, tzinfo=timezone.utc),
+        datetime(2019, 9, 9, 10, tzinfo=timezone.utc),
     )
 
     assert isinstance(result, list)
@@ -135,6 +136,16 @@ def test_daily_binance_futures_pipeline_schedule_requests_latest_daily_partition
         """
     )
     assert rows[0][0] > 0
+
+
+def test_daily_binance_futures_ingest_retries_hourly_for_late_binance_archives(
+    origo_assets: dict[str, object],
+) -> None:
+    retry_policy = origo_assets['insert_daily_binance_futures_trades_to_origo'].op.retry_policy
+
+    assert retry_policy is not None
+    assert retry_policy.max_retries == 23
+    assert retry_policy.delay == 3600
 
 
 def test_binance_source_template_schedules_are_registered_in_defs(

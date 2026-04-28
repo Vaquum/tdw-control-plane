@@ -358,7 +358,7 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
 daily_binance_spot_pipeline_schedule = build_schedule_from_partitioned_job(
     refresh_binance_spot_data_source_job,
     name='daily_binance_spot_pipeline_schedule',
-    hour_of_day=1,
+    hour_of_day=10,
     default_status=DefaultScheduleStatus.RUNNING,
 )
 
@@ -366,7 +366,7 @@ daily_binance_spot_pipeline_schedule = build_schedule_from_partitioned_job(
 daily_binance_futures_pipeline_schedule = build_schedule_from_partitioned_job(
     refresh_binance_futures_data_source_job,
     name='daily_binance_futures_pipeline_schedule',
-    hour_of_day=1,
+    hour_of_day=10,
     default_status=DefaultScheduleStatus.RUNNING,
 )
 
