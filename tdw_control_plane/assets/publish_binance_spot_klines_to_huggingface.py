@@ -5,14 +5,38 @@ import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import polars as pl
+from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 from huggingface_hub import HfApi
 
-from tdw_control_plane.assets.daily_trades_to_tdw import daily_partitions
-from tdw_control_plane.query import get_binance_spot_klines
+from tdw_control_plane.assets.create_binance_spot_klines_table_origo import (
+    KLINES_TABLE_NAME,
+)
+from tdw_control_plane.assets.daily_trades_to_origo import daily_partitions
 
 EXPORT_START_DATE = "2020-01-01 00:00:00"
 EXPORT_FILENAME_PREFIX = "btcusdt_1m_kline_20200101_to_"
+
+_ORIGO_SPOT_KLINE_COLUMNS = [
+    "datetime",
+    "open",
+    "high",
+    "low",
+    "close",
+    "mean",
+    "std",
+    "volume",
+    "maker_ratio",
+    "no_of_trades",
+    "open_liquidity",
+    "high_liquidity",
+    "low_liquidity",
+    "close_liquidity",
+    "liquidity_sum",
+    "maker_volume",
+    "maker_liquidity",
+]
 
 
 def _get_huggingface_token() -> str:
@@ -32,10 +56,50 @@ def _get_huggingface_dataset_repo_id() -> str:
     )
 
 
+def _get_origo_spot_klines(
+    *,
+    start_date_limit: str,
+    end_date_limit: str,
+) -> pl.DataFrame:
+    password = os.environ.get("CLICKHOUSE_PASSWORD")
+    if not password:
+        raise RuntimeError(
+            "CLICKHOUSE_PASSWORD environment variable must be set before reading Origo klines."
+        )
+
+    host = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
+    port = int(os.environ.get("CLICKHOUSE_PORT", "9000"))
+    user = os.environ.get("CLICKHOUSE_USER", "default")
+    database = os.environ.get("CLICKHOUSE_DATABASE", "origo")
+
+    client = ClickhouseClient(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        settings={"use_numpy": True},
+    )
+    try:
+        pandas_df = client.query_dataframe(
+            f"""
+            SELECT {", ".join(_ORIGO_SPOT_KLINE_COLUMNS)}
+            FROM {database}.{KLINES_TABLE_NAME}
+            WHERE datetime >= toDateTime(%(start_dt)s)
+              AND datetime <  toDateTime(%(end_dt)s)
+            ORDER BY datetime
+            """,
+            {"start_dt": start_date_limit, "end_dt": end_date_limit},
+        )
+    finally:
+        client.disconnect()
+
+    return pl.from_pandas(pandas_df)
+
+
 def _build_dataset_card(export_end_date: str, row_count: int, file_name: str) -> str:
     return f"""# BTCUSDT 1m spot klines
 
-This dataset is exported daily from `tdw.binance_trades_complete` using TDW's `get_binance_spot_klines` query at 1-minute resolution.
+This dataset is exported daily from `origo.binance_spot_klines` at 1-minute resolution.
 
 Latest snapshot:
 
@@ -48,7 +112,7 @@ Latest snapshot:
 Notes:
 
 - Source market: Binance spot BTCUSDT
-- Source table: `tdw.binance_trades_complete`
+- Source table: `origo.binance_spot_klines`
 - `median` and `iqr` are intentionally omitted from the exported Parquet snapshot
 - Timestamps are UTC
 """
@@ -91,7 +155,7 @@ def _sha256_for_file(file_path: Path) -> str:
 @asset(
     partitions_def=daily_partitions,
     group_name="binance_data",
-    description="Exports daily BTCUSDT 1m spot klines from tdw.binance_trades_complete and publishes the latest snapshot to Hugging Face.",
+    description="Exports daily BTCUSDT 1m spot klines from origo.binance_spot_klines and publishes the latest snapshot to Hugging Face.",
 )
 def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
     partition_date_str = context.asset_partition_key_for_output()
@@ -113,12 +177,9 @@ def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
     context.log.info(
         f"Building Binance spot klines snapshot through {export_end_date} UTC."
     )
-    data = get_binance_spot_klines(
-        kline_size=60,
+    data = _get_origo_spot_klines(
         start_date_limit=EXPORT_START_DATE,
         end_date_limit=export_end_exclusive,
-        table_name="binance_trades_complete",
-        include_quantiles=False,
     )
 
     if data.height == 0:

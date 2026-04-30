@@ -1,3 +1,6 @@
+# v1.6.6 on April 30, 2026
+- Switch the Hugging Face Binance spot 1m kline publisher to read from the Origo `binance_spot_klines` projection and trigger off the `refresh_binance_spot_klines_origo` materialization so daily HF snapshots no longer depend on the legacy TDW daily overlay path.
+
 # v1.6.5 on April 28, 2026
 - Move the default-running daily Binance spot Origo source schedule to `04:00 UTC` while leaving the futures schedule at `10:00 UTC`.
 
