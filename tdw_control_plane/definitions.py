@@ -14,11 +14,13 @@ import requests
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import (
     AssetKey,
+    DefaultScheduleStatus,
     Definitions,
     RunRequest,
     ScheduleEvaluationContext,
     SkipReason,
     asset_sensor,
+    build_schedule_from_partitioned_job,
     define_asset_job,
     schedule,
 )
@@ -353,20 +355,20 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
     return context.scheduled_execution_time or datetime.now(timezone.utc)
 
 
-@schedule(
-    job=refresh_binance_spot_data_source_job,
-    cron_schedule="0 1 * * *",
-    execution_timezone="UTC")
-def daily_binance_spot_pipeline_schedule():
-    return {}
+daily_binance_spot_pipeline_schedule = build_schedule_from_partitioned_job(
+    refresh_binance_spot_data_source_job,
+    name='daily_binance_spot_pipeline_schedule',
+    hour_of_day=4,
+    default_status=DefaultScheduleStatus.RUNNING,
+)
 
 
-@schedule(
-    job=refresh_binance_futures_data_source_job,
-    cron_schedule="0 1 * * *",
-    execution_timezone="UTC")
-def daily_binance_futures_pipeline_schedule():
-    return {}
+daily_binance_futures_pipeline_schedule = build_schedule_from_partitioned_job(
+    refresh_binance_futures_data_source_job,
+    name='daily_binance_futures_pipeline_schedule',
+    hour_of_day=10,
+    default_status=DefaultScheduleStatus.RUNNING,
+)
 
 
 @schedule(

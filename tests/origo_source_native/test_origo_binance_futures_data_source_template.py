@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from dagster import DefaultScheduleStatus, build_schedule_context
 
 from .helpers import (
     BINANCE_FUTURES_DATASET_SOURCE,
@@ -58,6 +60,21 @@ def _rows_to_dicts(columns: list[str], rows: list[tuple[Any, ...]]) -> list[dict
     ]
 
 
+def _evaluate_schedule(
+    origo_definitions_module,
+    schedule_name: str,
+    scheduled_time: datetime,
+) -> object:
+    repository_def = origo_definitions_module.defs.get_repository_def()
+    context = build_schedule_context(
+        scheduled_execution_time=scheduled_time,
+        repository_def=repository_def,
+    )
+    schedule_def = repository_def.get_schedule_def(schedule_name)
+    result = schedule_def.evaluate_tick(context)
+    return result.run_requests
+
+
 def test_binance_daily_futures_trades_table_name_contract(origo_assets: dict[str, object]) -> None:
     assert origo_assets['FUTURES_RAW_TABLE_NAME'] == 'binance_daily_futures_trades'
     assert origo_assets['FUTURES_LEDGER_TABLE_NAME'] == 'binance_daily_futures_trades_ingestion'
@@ -71,16 +88,64 @@ def test_daily_binance_futures_pipeline_schedule_targets_binance_futures_data_so
     origo_definitions_module,
 ) -> None:
     schedule_def = origo_definitions_module.daily_binance_futures_pipeline_schedule
+    resolved_schedule_def = origo_definitions_module.defs.get_repository_def().get_schedule_def(
+        'daily_binance_futures_pipeline_schedule'
+    )
     job_def = origo_definitions_module.defs.get_job_def('refresh_binance_futures_data_source_job')
     node_names = set(job_def.graph.node_dict.keys())
 
     assert not hasattr(origo_definitions_module, 'daily_futures_pipeline_schedule')
     assert schedule_def.job.name == 'refresh_binance_futures_data_source_job'
+    assert resolved_schedule_def.cron_schedule == '0 10 * * *'
+    assert resolved_schedule_def.execution_timezone == 'UTC'
+    assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert node_names >= {
         'insert_daily_binance_futures_trades_to_origo',
         'refresh_binance_futures_klines_origo',
         'refresh_aligned_1m_exchange_from_binance_futures_origo',
     }
+
+
+def test_daily_binance_futures_pipeline_schedule_requests_latest_daily_partition(
+    origo_definitions_module,
+    materialize_binance_futures_data_source_assets,
+    query_origo,
+    origo_assets: dict[str, object],
+) -> None:
+    result = _evaluate_schedule(
+        origo_definitions_module,
+        'daily_binance_futures_pipeline_schedule',
+        datetime(2019, 9, 9, 10, tzinfo=timezone.utc),
+    )
+
+    assert isinstance(result, list)
+    assert [request.partition_key for request in result] == ['2019-09-08']
+    assert [request.run_key for request in result] == ['2019-09-08']
+
+    materialize_result = materialize_binance_futures_data_source_assets(
+        partition_key=result[0].partition_key
+    )
+    assert materialize_result.success
+
+    rows = query_origo(
+        f"""
+        SELECT count()
+        FROM {ORIGO_DATABASE}.{origo_assets['ALIGNED_TABLE_NAME']}
+        WHERE dataset_source = '{BINANCE_FUTURES_DATASET_SOURCE}'
+          AND toDate(datetime) = toDate('{result[0].partition_key}')
+        """
+    )
+    assert rows[0][0] > 0
+
+
+def test_daily_binance_futures_ingest_retries_hourly_for_late_binance_archives(
+    origo_assets: dict[str, object],
+) -> None:
+    retry_policy = origo_assets['insert_daily_binance_futures_trades_to_origo'].op.retry_policy
+
+    assert retry_policy is not None
+    assert retry_policy.max_retries == 23
+    assert retry_policy.delay == 3600
 
 
 def test_binance_source_template_schedules_are_registered_in_defs(

@@ -7,7 +7,7 @@ from io import BytesIO
 
 import requests
 from clickhouse_driver import Client as ClickhouseClient
-from dagster import AssetExecutionContext, DailyPartitionsDefinition, asset
+from dagster import AssetExecutionContext, DailyPartitionsDefinition, RetryPolicy, asset
 
 from .create_binance_trades_table_origo import (
     LEDGER_TABLE_NAME,
@@ -268,6 +268,7 @@ def _process_day(
     deps=[create_binance_daily_spot_trades_table_origo],
     group_name='binance_data',
     description='Downloads, validates, extracts, and loads Binance BTCUSDT spot trade data into Origo',
+    retry_policy=RetryPolicy(max_retries=23, delay=3600),
 )
 def insert_daily_binance_spot_trades_to_origo(
     context: AssetExecutionContext,
