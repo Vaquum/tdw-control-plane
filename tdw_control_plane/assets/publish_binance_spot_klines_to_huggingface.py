@@ -6,12 +6,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import polars as pl
-from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 from huggingface_hub import HfApi
 
-from tdw_control_plane.assets.create_binance_spot_klines_table_origo import (
-    KLINES_TABLE_NAME,
+from tdw_control_plane.assets.create_origo_database import (
+    _get_clickhouse_settings,
+    _make_clickhouse_client,
 )
 from tdw_control_plane.assets.daily_trades_to_origo import daily_partitions
 
@@ -61,39 +61,35 @@ def _get_origo_spot_klines(
     start_date_limit: str,
     end_date_limit: str,
 ) -> pl.DataFrame:
-    password = os.environ.get("CLICKHOUSE_PASSWORD")
-    if not password:
-        raise RuntimeError(
-            "CLICKHOUSE_PASSWORD environment variable must be set before reading Origo klines."
-        )
-
-    host = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
-    port = int(os.environ.get("CLICKHOUSE_PORT", "9000"))
-    user = os.environ.get("CLICKHOUSE_USER", "default")
-    database = os.environ.get("CLICKHOUSE_DATABASE", "origo")
-
-    client = ClickhouseClient(
-        host=host,
-        port=port,
-        user=user,
-        password=password,
-        settings={"use_numpy": True},
-    )
+    settings = _get_clickhouse_settings()
+    client = _make_clickhouse_client(settings)
     try:
-        pandas_df = client.query_dataframe(
-            f"""
-            SELECT {", ".join(_ORIGO_SPOT_KLINE_COLUMNS)}
-            FROM {database}.{KLINES_TABLE_NAME}
-            WHERE datetime >= toDateTime(%(start_dt)s)
-              AND datetime <  toDateTime(%(end_dt)s)
-            ORDER BY datetime
-            """,
+        rows = client.execute(
+            "SELECT "
+            + ", ".join(_ORIGO_SPOT_KLINE_COLUMNS)
+            + " FROM origo.binance_spot_klines"
+            + " WHERE datetime >= toDateTime(%(start_dt)s)"
+            + "   AND datetime <  toDateTime(%(end_dt)s)"
+            + " ORDER BY datetime",
             {"start_dt": start_date_limit, "end_dt": end_date_limit},
         )
     finally:
         client.disconnect()
 
-    return pl.from_pandas(pandas_df)
+    polars_df = pl.DataFrame(
+        rows, schema=_ORIGO_SPOT_KLINE_COLUMNS, orient="row"
+    )
+
+    polars_df = polars_df.with_columns([
+        pl.col("datetime").cast(pl.Datetime("ms", time_zone="UTC")),
+        pl.col("mean").round(5),
+        pl.col("std").round(6),
+        pl.col("volume").round(9),
+        pl.col("liquidity_sum").round(1),
+        pl.col("maker_liquidity").round(1),
+    ])
+
+    return polars_df
 
 
 def _build_dataset_card(export_end_date: str, row_count: int, file_name: str) -> str:

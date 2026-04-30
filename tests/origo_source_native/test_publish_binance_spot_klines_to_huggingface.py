@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import importlib
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from types import ModuleType
 
@@ -95,7 +95,14 @@ def test_publish_snapshot_reads_origo_spot_klines(
     )
     expected_df = pl.DataFrame(
         origo_projection_rows, schema=_HF_DATASET_COLUMNS, orient='row'
-    )
+    ).with_columns([
+        pl.col('datetime').cast(pl.Datetime('ms', time_zone='UTC')),
+        pl.col('mean').round(5),
+        pl.col('std').round(6),
+        pl.col('volume').round(9),
+        pl.col('liquidity_sum').round(1),
+        pl.col('maker_liquidity').round(1),
+    ])
     assert expected_df.height > 0
 
     publish_module = _reload_publish_module()
@@ -157,7 +164,7 @@ def test_publish_snapshot_reads_origo_spot_klines(
     assert 'median' not in df.columns
     assert 'iqr' not in df.columns
 
-    next_partition_boundary = datetime(2024, 1, 2)
+    next_partition_boundary = datetime(2024, 1, 2, tzinfo=timezone.utc)
     assert df.filter(pl.col('datetime') >= next_partition_boundary).height == 0, (
         'Published parquet contained rows beyond the requested daily partition; '
         'the implementation must honor end_date_limit.'
