@@ -4,15 +4,107 @@ import os
 import tempfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import TypeAlias, cast
 
+import polars as pl
 from dagster import AssetExecutionContext, asset
 from huggingface_hub import HfApi
 
-from tdw_control_plane.assets.daily_trades_to_tdw import daily_partitions
-from tdw_control_plane.query import get_binance_spot_klines
+from tdw_control_plane.assets.create_origo_database import (
+    _get_clickhouse_settings,
+    _make_clickhouse_client,
+)
+from tdw_control_plane.assets.daily_trades_to_origo import daily_partitions
 
 EXPORT_START_DATE = "2020-01-01 00:00:00"
 EXPORT_FILENAME_PREFIX = "btcusdt_1m_kline_20200101_to_"
+_OrigoSpotKlineRow: TypeAlias = tuple[
+    datetime,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    int,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+    float,
+]
+_ORIGO_SPOT_KLINE_COLUMNS = [
+    "datetime",
+    "open",
+    "high",
+    "low",
+    "close",
+    "mean",
+    "std",
+    "volume",
+    "maker_ratio",
+    "no_of_trades",
+    "open_liquidity",
+    "high_liquidity",
+    "low_liquidity",
+    "close_liquidity",
+    "liquidity_sum",
+    "maker_volume",
+    "maker_liquidity",
+]
+
+
+def _get_origo_spot_klines(
+    *,
+    start_date_limit: str,
+    end_date_limit: str,
+) -> pl.DataFrame:
+    settings = _get_clickhouse_settings()
+    client = _make_clickhouse_client(settings)
+    try:
+        rows = cast(
+            list[_OrigoSpotKlineRow],
+            client.execute(
+                f"""
+                SELECT
+                    datetime,
+                    open,
+                    high,
+                    low,
+                    close,
+                    round(mean, 5) AS mean,
+                    round(std, 6) AS std,
+                    round(volume, 9) AS volume,
+                    maker_ratio,
+                    no_of_trades,
+                    open_liquidity,
+                    high_liquidity,
+                    low_liquidity,
+                    close_liquidity,
+                    round(liquidity_sum, 1) AS liquidity_sum,
+                    maker_volume,
+                    round(maker_liquidity, 1) AS maker_liquidity
+                FROM {settings.database}.binance_spot_klines
+                WHERE datetime >= toDateTime(%(start_date_limit)s)
+                  AND datetime < toDateTime(%(end_date_limit)s)
+                ORDER BY datetime ASC
+                """,
+                {
+                    "start_date_limit": start_date_limit,
+                    "end_date_limit": end_date_limit,
+                },
+            ),
+        )
+    finally:
+        client.disconnect()
+
+    return pl.DataFrame(rows, schema=_ORIGO_SPOT_KLINE_COLUMNS, orient="row").with_columns(
+        pl.col("datetime").cast(pl.Datetime("ms", time_zone="UTC"))
+    )
 
 
 def _get_huggingface_token() -> str:
@@ -35,7 +127,7 @@ def _get_huggingface_dataset_repo_id() -> str:
 def _build_dataset_card(export_end_date: str, row_count: int, file_name: str) -> str:
     return f"""# BTCUSDT 1m spot klines
 
-This dataset is exported daily from `tdw.binance_trades_complete` using TDW's `get_binance_spot_klines` query at 1-minute resolution.
+This dataset is exported daily from `origo.binance_spot_klines` at 1-minute resolution.
 
 Latest snapshot:
 
@@ -48,7 +140,7 @@ Latest snapshot:
 Notes:
 
 - Source market: Binance spot BTCUSDT
-- Source table: `tdw.binance_trades_complete`
+- Source table: `origo.binance_spot_klines`
 - `median` and `iqr` are intentionally omitted from the exported Parquet snapshot
 - Timestamps are UTC
 """
@@ -91,9 +183,11 @@ def _sha256_for_file(file_path: Path) -> str:
 @asset(
     partitions_def=daily_partitions,
     group_name="binance_data",
-    description="Exports daily BTCUSDT 1m spot klines from tdw.binance_trades_complete and publishes the latest snapshot to Hugging Face.",
+    description="Exports daily BTCUSDT 1m spot klines from origo.binance_spot_klines and publishes the latest snapshot to Hugging Face.",
 )
-def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
+def publish_binance_spot_klines_to_huggingface(
+    context: AssetExecutionContext,
+) -> dict[str, object]:
     partition_date_str = context.asset_partition_key_for_output()
     if partition_date_str is None:
         raise RuntimeError(
@@ -113,12 +207,9 @@ def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
     context.log.info(
         f"Building Binance spot klines snapshot through {export_end_date} UTC."
     )
-    data = get_binance_spot_klines(
-        kline_size=60,
+    data = _get_origo_spot_klines(
         start_date_limit=EXPORT_START_DATE,
         end_date_limit=export_end_exclusive,
-        table_name="binance_trades_complete",
-        include_quantiles=False,
     )
 
     if data.height == 0:

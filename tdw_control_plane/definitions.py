@@ -458,7 +458,7 @@ def monthly_tdw_rollforward_schedule(context: ScheduleEvaluationContext):
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_trades_to_tdw"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_klines_to_huggingface_job,
 )
 def publish_binance_spot_klines_to_huggingface_sensor(context, asset_event):
