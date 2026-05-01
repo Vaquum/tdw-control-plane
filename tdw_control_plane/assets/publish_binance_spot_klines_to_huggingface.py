@@ -8,7 +8,7 @@ from pathlib import Path
 from dagster import AssetExecutionContext, asset
 from huggingface_hub import HfApi
 
-from tdw_control_plane.assets.daily_trades_to_tdw import daily_partitions
+from tdw_control_plane.assets.daily_trades_to_origo import daily_partitions
 from tdw_control_plane.query import get_binance_spot_klines
 
 EXPORT_START_DATE = "2020-01-01 00:00:00"
@@ -35,7 +35,7 @@ def _get_huggingface_dataset_repo_id() -> str:
 def _build_dataset_card(export_end_date: str, row_count: int, file_name: str) -> str:
     return f"""# BTCUSDT 1m spot klines
 
-This dataset is exported daily from `tdw.binance_trades_complete` using TDW's `get_binance_spot_klines` query at 1-minute resolution.
+This dataset is exported daily from `origo.binance_daily_spot_trades` using `get_binance_spot_klines` at 1-minute resolution.
 
 Latest snapshot:
 
@@ -48,7 +48,7 @@ Latest snapshot:
 Notes:
 
 - Source market: Binance spot BTCUSDT
-- Source table: `tdw.binance_trades_complete`
+- Source table: `origo.binance_daily_spot_trades`
 - `median` and `iqr` are intentionally omitted from the exported Parquet snapshot
 - Timestamps are UTC
 """
@@ -91,9 +91,11 @@ def _sha256_for_file(file_path: Path) -> str:
 @asset(
     partitions_def=daily_partitions,
     group_name="binance_data",
-    description="Exports daily BTCUSDT 1m spot klines from tdw.binance_trades_complete and publishes the latest snapshot to Hugging Face.",
+    description="Exports daily BTCUSDT 1m spot klines from origo.binance_daily_spot_trades and publishes the latest snapshot to Hugging Face.",
 )
-def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
+def publish_binance_spot_klines_to_huggingface(
+    context: AssetExecutionContext,
+) -> dict[str, object]:
     partition_date_str = context.asset_partition_key_for_output()
     if partition_date_str is None:
         raise RuntimeError(
@@ -117,7 +119,8 @@ def publish_binance_spot_klines_to_huggingface(context: AssetExecutionContext):
         kline_size=60,
         start_date_limit=EXPORT_START_DATE,
         end_date_limit=export_end_exclusive,
-        table_name="binance_trades_complete",
+        table_name="binance_daily_spot_trades",
+        database_name="origo",
         include_quantiles=False,
     )
 

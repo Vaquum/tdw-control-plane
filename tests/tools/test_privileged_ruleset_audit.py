@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import contextlib
-import importlib.util
+import importlib
 import io
 import json
+import sys
 import types
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-AUDIT_TOOL = REPO_ROOT / 'tools/privileged_ruleset_audit.py'
+TOOLS_DIR = REPO_ROOT / 'tools'
 RULESET_WORKFLOW = REPO_ROOT / '.github/workflows/pr_checks_ruleset.yml'
 AUDIT_WORKFLOW = REPO_ROOT / '.github/workflows/audit_main_ruleset.yml'
 SNAPSHOT = REPO_ROOT / '.github/rulesets/main.json'
@@ -16,21 +17,9 @@ FIXTURES = REPO_ROOT / 'tests/fixtures/github'
 
 
 def _load_audit_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location('privileged_ruleset_audit', AUDIT_TOOL)
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_ruleset_gate_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location('ruleset_gate_independent', REPO_ROOT / 'tools/ruleset_gate.py')
-    assert spec is not None
-    assert spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
+    if str(TOOLS_DIR) not in sys.path:
+        sys.path.insert(0, str(TOOLS_DIR))
+    return importlib.import_module('privileged_ruleset_audit')
 
 
 def _run_audit_fixture(live_fixture: str, tmp_path: Path) -> tuple[int, str, str]:
@@ -38,16 +27,13 @@ def _run_audit_fixture(live_fixture: str, tmp_path: Path) -> tuple[int, str, str
     stdout = io.StringIO()
     stderr = io.StringIO()
     with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-        try:
-            code = module.run_audit(
-                ruleset_file=str(SNAPSHOT),
-                repo=None,
-                ruleset_id=5406599,
-                output_dir=str(tmp_path),
-                live_json=str(FIXTURES / live_fixture),
-            )
-        except SystemExit as exc:
-            code = int(exc.code)
+        code = module.run_audit(
+            ruleset_file=str(SNAPSHOT),
+            repo=None,
+            ruleset_id=5406599,
+            output_dir=str(tmp_path),
+            live_json=str(FIXTURES / live_fixture),
+        )
     return code, stdout.getvalue(), stderr.getvalue()
 
 
@@ -105,22 +91,6 @@ def test_privileged_ruleset_audit_fails_loud_when_live_payload_omits_bypass_acto
     )
 
 
-def test_privileged_ruleset_audit_shares_ruleset_gate_semantics() -> None:
-    module = _load_audit_module()
-    ruleset_gate = _load_ruleset_gate_module()
-
-    assert (
-        module.shared_ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS
-        == ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS
-    )
-    assert (
-        module.shared_ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS
-        == ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS
-    )
-    assert module.shared_ruleset_gate.SNAPSHOT_TOP_LEVEL_FIELDS == ruleset_gate.SNAPSHOT_TOP_LEVEL_FIELDS
-    assert module.shared_ruleset_gate.IGNORED_LIVE_FIELDS == ruleset_gate.IGNORED_LIVE_FIELDS
-
-
 def test_audit_main_ruleset_workflow_contract() -> None:
     workflow = AUDIT_WORKFLOW.read_text(encoding='utf-8')
 
@@ -128,6 +98,7 @@ def test_audit_main_ruleset_workflow_contract() -> None:
     assert 'push:' in workflow
     assert 'branches: [main]' in workflow
     assert 'workflow_dispatch:' in workflow
+    assert "if: github.ref == 'refs/heads/main'" in workflow
     assert 'pull_request:' not in workflow
     assert 'RULESET_AUDIT_TOKEN' in workflow
     assert 'tools/privileged_ruleset_audit.py' in workflow

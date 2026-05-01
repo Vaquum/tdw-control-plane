@@ -4,28 +4,13 @@
 from __future__ import annotations
 
 import argparse
-import importlib.util
 import json
 import sys
-import types
 from pathlib import Path
-from typing import Any
 
-TOOLS_DIR = Path(__file__).resolve().parent
+import ruleset_gate as shared_ruleset_gate
 
 LIVE_PAYLOAD_SNAPSHOT = 'live_ruleset.json'
-
-
-def _load_shared_ruleset_gate_module() -> types.ModuleType:
-    spec = importlib.util.spec_from_file_location('ruleset_gate', TOOLS_DIR / 'ruleset_gate.py')
-    if spec is None or spec.loader is None:
-        raise SystemExit('privileged_ruleset_audit: cannot load tools/ruleset_gate.py')
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-shared_ruleset_gate = _load_shared_ruleset_gate_module()
 
 
 def fail(message: str, *, code: int) -> int:
@@ -33,7 +18,7 @@ def fail(message: str, *, code: int) -> int:
     return code
 
 
-def _write_live_payload_snapshot(output_dir: Path, payload: dict[str, Any]) -> Path:
+def _write_live_payload_snapshot(output_dir: Path, payload: dict[str, object]) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     path = output_dir / LIVE_PAYLOAD_SNAPSHOT
     path.write_text(
@@ -43,7 +28,7 @@ def _write_live_payload_snapshot(output_dir: Path, payload: dict[str, Any]) -> P
     return path
 
 
-def normalize_privileged_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]:
+def _privileged_live_ruleset_error(payload: dict[str, object]) -> tuple[str, int] | None:
     live_fields = set(payload)
     unexpected = (
         live_fields
@@ -52,32 +37,24 @@ def normalize_privileged_live_ruleset(payload: dict[str, Any]) -> dict[str, Any]
         - shared_ruleset_gate.IGNORED_LIVE_FIELDS
     )
     if unexpected:
-        raise SystemExit(
-            fail(
-                f'unexpected live ruleset field(s): {sorted(unexpected)}',
-                code=1,
-            )
-        )
+        return f'unexpected live ruleset field(s): {sorted(unexpected)}', 1
 
     missing_required = shared_ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS - live_fields
     if missing_required:
-        raise SystemExit(
-            fail(
-                f'expected live ruleset field(s) missing: {sorted(missing_required)}',
-                code=1,
-            )
-        )
+        return f'expected live ruleset field(s) missing: {sorted(missing_required)}', 1
 
     missing_optional = shared_ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS - live_fields
     if missing_optional:
-        raise SystemExit(
-            fail(
-                'privileged live ruleset missing required observable field(s): '
-                f'{sorted(missing_optional)}',
-                code=2,
-            )
+        return (
+            'privileged live ruleset missing required observable field(s): '
+            f'{sorted(missing_optional)}',
+            2,
         )
 
+    return None
+
+
+def normalize_privileged_live_ruleset(payload: dict[str, object]) -> dict[str, object]:
     comparable_fields = (
         shared_ruleset_gate.REQUIRED_TOP_LEVEL_FIELDS
         | shared_ruleset_gate.OPTIONAL_LIVE_TOP_LEVEL_FIELDS
@@ -103,11 +80,13 @@ def run_audit(
     )
     snapshot_dir = Path(output_dir)
 
-    try:
-        live_ruleset = normalize_privileged_live_ruleset(live_payload)
-    except SystemExit:
+    live_error = _privileged_live_ruleset_error(live_payload)
+    if live_error is not None:
+        message, code = live_error
         _write_live_payload_snapshot(snapshot_dir, live_payload)
-        raise
+        return fail(message, code=code)
+
+    live_ruleset = normalize_privileged_live_ruleset(live_payload)
 
     expected_comparable = {
         key: expected_ruleset[key]

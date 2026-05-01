@@ -1,7 +1,10 @@
-# v1.6.6 on April 30, 2026
+# v1.6.7 on May 1, 2026
 - Add `audit_main_ruleset`, a privileged post-merge `main` workflow that audits full live parity of ruleset `5406599`, including `bypass_actors`, against `.github/rulesets/main.json`.
 - Add `tools/privileged_ruleset_audit.py` and `tests/tools/test_privileged_ruleset_audit.py`, including the fail-loud contract for missing or underscoped visibility of `bypass_actors` and the live-payload snapshot on failure.
 - Extend `pr_checks_ruleset` so the privileged-audit workflow and tool contract are mechanically protected by required CI before rollout.
+
+# v1.6.6 on April 30, 2026
+- Route the Hugging Face spot kline publisher through the Origo projection.
 
 # v1.6.5 on April 28, 2026
 - Move the default-running daily Binance spot Origo source schedule to `04:00 UTC` while leaving the futures schedule at `10:00 UTC`.
