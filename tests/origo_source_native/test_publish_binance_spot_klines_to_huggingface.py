@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 
 import polars as pl
@@ -9,6 +10,44 @@ import pytest
 from dagster import AssetKey, materialize
 
 from .helpers import ORIGO_DATABASE
+
+KLINE_EXPORT_COLUMNS = [
+    "datetime",
+    "open",
+    "high",
+    "low",
+    "close",
+    "mean",
+    "std",
+    "volume",
+    "maker_ratio",
+    "no_of_trades",
+    "open_liquidity",
+    "high_liquidity",
+    "low_liquidity",
+    "close_liquidity",
+    "liquidity_sum",
+    "maker_volume",
+    "maker_liquidity",
+]
+
+
+def _origo_projection_dataframe(
+    query_origo: Callable[[str], list[tuple[object, ...]]],
+    table_name: object,
+    partition_key: str,
+) -> pl.DataFrame:
+    rows = query_origo(
+        f"""
+        SELECT
+            {', '.join(KLINE_EXPORT_COLUMNS)}
+        FROM {ORIGO_DATABASE}.{table_name}
+        WHERE datetime >= toDateTime('2020-01-01 00:00:00')
+          AND datetime < toDateTime('2024-01-02 00:00:00')
+        ORDER BY datetime
+        """
+    )
+    return pl.DataFrame(rows, schema=KLINE_EXPORT_COLUMNS, orient="row")
 
 
 def test_publish_sensor_targets_origo_spot_kline_materialization(
@@ -19,14 +58,15 @@ def test_publish_sensor_targets_origo_spot_kline_materialization(
     assert sensor_def.asset_key == AssetKey("refresh_binance_spot_klines_origo")
 
 
-def test_publish_snapshot_reads_origo_spot_klines(
+def test_publish_snapshot_reads_origo_spot_trades_with_shared_query(
     monkeypatch: pytest.MonkeyPatch,
-    materialize_binance_spot_data_source_assets: object,
-    query_origo: object,
+    materialize_binance_spot_data_source_assets: Callable[..., object],
+    query_origo: Callable[[str], list[tuple[object, ...]]],
     origo_assets: dict[str, object],
 ) -> None:
     partition_key = "2024-01-01"
     uploaded: dict[str, object] = {}
+    captured_query: dict[str, object] = {}
 
     result = materialize_binance_spot_data_source_assets(partition_key=partition_key)
     assert result.success
@@ -63,9 +103,22 @@ def test_publish_snapshot_reads_origo_spot_klines(
             uploaded["metadata"] = metadata
             uploaded["parquet"] = pl.read_parquet(folder / metadata["file_name"])
 
+    def recording_get_binance_spot_klines(**kwargs: object) -> pl.DataFrame:
+        captured_query.update(kwargs)
+        return _origo_projection_dataframe(
+            query_origo,
+            origo_assets["KLINES_TABLE_NAME"],
+            partition_key,
+        )
+
     monkeypatch.setenv("HF_TOKEN", "test-token")
     monkeypatch.setenv("HUGGINGFACE_DATASET_REPO_ID", "test/binance-klines")
     monkeypatch.setattr(publish_module, "HfApi", RecordingHfApi)
+    monkeypatch.setattr(
+        publish_module,
+        "get_binance_spot_klines",
+        recording_get_binance_spot_klines,
+    )
 
     publish_result = materialize(
         [publish_module.publish_binance_spot_klines_to_huggingface],
@@ -76,14 +129,6 @@ def test_publish_snapshot_reads_origo_spot_klines(
     parquet = uploaded["parquet"]
     metadata = uploaded["metadata"]
     readme = uploaded["readme"]
-    row_count = query_origo(
-        f"""
-        SELECT count()
-        FROM {ORIGO_DATABASE}.{origo_assets['KLINES_TABLE_NAME']}
-        WHERE datetime >= toDateTime('2020-01-01 00:00:00')
-          AND datetime < toDateTime('2024-01-02 00:00:00')
-        """
-    )[0][0]
 
     assert isinstance(parquet, pl.DataFrame)
     assert isinstance(metadata, dict)
@@ -92,25 +137,14 @@ def test_publish_snapshot_reads_origo_spot_klines(
     assert uploaded["repo_id"] == "test/binance-klines"
     assert uploaded["upload_repo_id"] == "test/binance-klines"
     assert metadata["export_end_date"] == partition_key
-    assert metadata["row_count"] == row_count
-    assert parquet.height == row_count
-    assert parquet.columns == [
-        "datetime",
-        "open",
-        "high",
-        "low",
-        "close",
-        "mean",
-        "std",
-        "volume",
-        "maker_ratio",
-        "no_of_trades",
-        "open_liquidity",
-        "high_liquidity",
-        "low_liquidity",
-        "close_liquidity",
-        "liquidity_sum",
-        "maker_volume",
-        "maker_liquidity",
-    ]
-    assert "origo.binance_spot_klines" in readme
+    assert metadata["row_count"] == parquet.height
+    assert parquet.columns == KLINE_EXPORT_COLUMNS
+    assert captured_query == {
+        "kline_size": 60,
+        "start_date_limit": "2020-01-01 00:00:00",
+        "end_date_limit": "2024-01-02 00:00:00",
+        "table_name": "binance_daily_spot_trades",
+        "database_name": "origo",
+        "include_quantiles": False,
+    }
+    assert "origo.binance_daily_spot_trades" in readme
