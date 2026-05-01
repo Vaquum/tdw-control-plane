@@ -1,3 +1,6 @@
+# v1.6.6 on April 30, 2026
+- Route the Hugging Face spot kline publisher through the Origo projection.
+
 # v1.6.5 on April 28, 2026
 - Move the default-running daily Binance spot Origo source schedule to `04:00 UTC` while leaving the futures schedule at `10:00 UTC`.
 

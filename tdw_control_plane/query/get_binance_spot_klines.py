@@ -51,6 +51,7 @@ def get_binance_spot_klines(
     end_date_limit: str | None = None,
     show_summary: bool = False,
     table_name: str = "binance_trades_complete",
+    database_name: str = "tdw",
     include_quantiles: bool = True,
 ) -> pl.DataFrame:
     """Query Binance BTCUSDT spot klines from TDW.
@@ -69,11 +70,14 @@ def get_binance_spot_klines(
             `YYYY-MM-DD`, `YYYY-MM-DD HH:MM:SS`, or `YYYY-MM-DDTHH:MM:SS`.
         show_summary: Whether to log query timing and dataframe size details.
         table_name: ClickHouse source table name.
+        database_name: ClickHouse source database name.
         include_quantiles: Whether to include `median` and `iqr` columns.
     """
 
     if re.fullmatch(r"[A-Za-z0-9_]+", table_name) is None:
         raise ValueError(f"Invalid ClickHouse table name: {table_name}")
+    if re.fullmatch(r"[A-Za-z0-9_]+", database_name) is None:
+        raise ValueError(f"Invalid ClickHouse database name: {database_name}")
 
     n_rows = _validate_positive_int(n_rows, "n_rows")
     kline_size = _validate_positive_int(kline_size, "kline_size")
@@ -129,7 +133,7 @@ def get_binance_spot_klines(
             f"    sum(price * quantity)         AS liquidity_sum, "
             f"    sumKahan(is_buyer_maker * quantity)   AS maker_volume, "
             f"    sum(is_buyer_maker * price * quantity) AS maker_liquidity "
-            f"FROM tdw.{table_name} "
+            f"FROM {database_name}.{table_name} "
             f"{where_sql}"
             f"GROUP BY datetime "
             f"ORDER BY datetime ASC "
