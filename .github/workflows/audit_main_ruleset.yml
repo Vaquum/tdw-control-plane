@@ -1,0 +1,47 @@
+name: audit_main_ruleset
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit_main_ruleset:
+    name: audit_main_ruleset
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up audit venv
+        run: python -m venv .venv-ruleset-audit
+
+      - name: Install audit dependencies
+        run: .venv-ruleset-audit/bin/python -m pip install --upgrade pip
+
+      - name: Audit live main ruleset with privileged token
+        env:
+          GH_TOKEN: ${{ secrets.RULESET_AUDIT_TOKEN }}
+        run: >-
+          .venv-ruleset-audit/bin/python tools/privileged_ruleset_audit.py
+          --ruleset-file .github/rulesets/main.json
+          --repo "${{ github.repository }}"
+          --ruleset-id 5406599
+          --output-dir .ruleset-audit
+
+      - name: Upload compared live payload on failure
+        if: ${{ failure() && hashFiles('.ruleset-audit/*') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-main-ruleset-live-payload
+          path: .ruleset-audit
