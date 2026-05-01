@@ -458,18 +458,18 @@ def monthly_tdw_rollforward_schedule(context: ScheduleEvaluationContext):
 
 
 @asset_sensor(
-    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
     job=publish_binance_spot_klines_to_huggingface_job,
 )
 def publish_binance_spot_klines_to_huggingface_sensor(context, asset_event):
     if not asset_event.dagster_event:
         return SkipReason(
-            "No Dagster event was attached to the Origo spot kline materialization."
+            "No Dagster event was attached to the Origo spot trades materialization."
         )
 
     partition_key = asset_event.dagster_event.partition
     if partition_key is None:
-        return SkipReason("Origo spot kline materialization did not include a partition key.")
+        return SkipReason("Origo spot trades materialization did not include a partition key.")
 
     return RunRequest(
         partition_key=partition_key,
