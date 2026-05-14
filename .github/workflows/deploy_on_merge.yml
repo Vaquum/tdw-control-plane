@@ -83,6 +83,8 @@ jobs:
           CLICKHOUSE_PASSWORD: test-password
           HF_TOKEN: test-token
           HUGGINGFACE_DATASET_REPO_ID: ${{ env.HUGGINGFACE_DATASET_REPO_ID }}
+          BINANCE_SPOT_DEPTH20_BASE_URL: https://example.invalid
+          BINANCE_SPOT_DEPTH20_AUTH_TOKEN: test-token
         run: docker compose -f docker-compose.deploy.yml config > /dev/null
 
       - name: Start SSH agent
@@ -108,6 +110,8 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          BINANCE_SPOT_DEPTH20_BASE_URL: ${{ secrets.BINANCE_SPOT_DEPTH20_BASE_URL }}
+          BINANCE_SPOT_DEPTH20_AUTH_TOKEN: ${{ secrets.BINANCE_SPOT_DEPTH20_AUTH_TOKEN }}
         run: |
           DEPLOY_ENV_FILE="/tmp/tdw-deploy.env"
           trap 'rm -f "$DEPLOY_ENV_FILE"' EXIT
@@ -123,6 +127,8 @@ jobs:
               "CLICKHOUSE_IMAGE": os.environ["CLICKHOUSE_IMAGE"],
               "CLICKHOUSE_PASSWORD": os.environ["CLICKHOUSE_PASSWORD"],
               "HF_TOKEN": os.environ["HF_TOKEN"],
+              "BINANCE_SPOT_DEPTH20_BASE_URL": os.environ["BINANCE_SPOT_DEPTH20_BASE_URL"],
+              "BINANCE_SPOT_DEPTH20_AUTH_TOKEN": os.environ["BINANCE_SPOT_DEPTH20_AUTH_TOKEN"],
               "HUGGINGFACE_DATASET_REPO_ID": os.environ["HUGGINGFACE_DATASET_REPO_ID"],
               "PROJECT_NAME": os.environ["PROJECT_NAME"],
           }

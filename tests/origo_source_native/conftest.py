@@ -8,10 +8,11 @@ import sys
 import time
 import types
 from functools import partial
-from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 import pytest
@@ -23,6 +24,15 @@ from .helpers import BINANCE_FIXTURE_ROOT, ORIGO_DATABASE
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CLICKHOUSE_IMAGE = 'clickhouse/clickhouse-server:24.3'
+DEPTH20_FIXTURE_MINUTE = '2026-05-13T13-23'
+DEPTH20_FIXTURE_UNIX_SECONDS = '1778678580'
+DEPTH20_AUTH_TOKEN = 'test-depth20-token'
+DEPTH20_FIXTURE_PATH = (
+    BINANCE_FIXTURE_ROOT
+    / 'spot'
+    / 'depth20'
+    / f'BTCUSDT-depth20-{DEPTH20_FIXTURE_MINUTE}.ndjson'
+)
 
 
 def _free_port() -> int:
@@ -113,6 +123,36 @@ def _reload_module(module_name: str) -> Any:
     return importlib.import_module(module_name)
 
 
+def _make_depth20_history_handler() -> type[BaseHTTPRequestHandler]:
+    class Depth20HistoryHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            parsed = urlparse(self.path)
+            if parsed.path != '/history':
+                self.send_error(404, 'not found')
+                return
+
+            if self.headers.get('Authorization') != f'Bearer {DEPTH20_AUTH_TOKEN}':
+                self.send_error(401, 'unauthorized')
+                return
+
+            query = parse_qs(parsed.query)
+            if query.get('from') != [DEPTH20_FIXTURE_UNIX_SECONDS]:
+                self.send_error(400, 'bad from')
+                return
+            if query.get('to') != [DEPTH20_FIXTURE_UNIX_SECONDS]:
+                self.send_error(400, 'bad to')
+                return
+
+            body = DEPTH20_FIXTURE_PATH.read_bytes()
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/x-ndjson')
+            self.send_header('Content-Length', str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    return Depth20HistoryHandler
+
+
 @pytest.fixture(scope='session')
 def clickhouse_settings() -> dict[str, str]:
     if shutil.which('docker') is None:
@@ -190,18 +230,35 @@ def binance_futures_daily_base_url(binance_fixture_server_root_url: str) -> str:
     return f'{binance_fixture_server_root_url}/futures/daily/trades/BTCUSDT/'
 
 
+@pytest.fixture(scope='session')
+def binance_spot_depth20_base_url() -> str:
+    port = _free_port()
+    server = ThreadingHTTPServer(('127.0.0.1', port), _make_depth20_history_handler())
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        yield f'http://127.0.0.1:{port}'
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+
+
 @pytest.fixture()
 def origo_test_env(
     monkeypatch: pytest.MonkeyPatch,
     clickhouse_settings: dict[str, str],
     binance_daily_base_url: str,
     binance_futures_daily_base_url: str,
+    binance_spot_depth20_base_url: str,
 ) -> dict[str, str]:
     _drop_origo_database(clickhouse_settings)
     for key, value in clickhouse_settings.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv('BINANCE_SPOT_DAILY_TRADES_BASE_URL', binance_daily_base_url)
     monkeypatch.setenv('BINANCE_FUTURES_DAILY_TRADES_BASE_URL', binance_futures_daily_base_url)
+    monkeypatch.setenv('BINANCE_SPOT_DEPTH20_BASE_URL', binance_spot_depth20_base_url)
+    monkeypatch.setenv('BINANCE_SPOT_DEPTH20_AUTH_TOKEN', DEPTH20_AUTH_TOKEN)
 
     yield clickhouse_settings
 
@@ -241,6 +298,18 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     )
     refresh_aligned_1m_exchange_from_binance_futures_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_futures_origo'
+    )
+    create_binance_spot_depth20_snapshots_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo'
+    )
+    sync_binance_spot_depth20_snapshots_to_origo_module = _reload_module(
+        'tdw_control_plane.assets.sync_binance_spot_depth20_snapshots_to_origo'
+    )
+    create_binance_spot_depth20_1m_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_depth20_1m_table_origo'
+    )
+    refresh_binance_spot_depth20_1m_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_depth20_1m_origo'
     )
 
     return {
@@ -292,6 +361,24 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         ),
         'BINANCE_FUTURES_DATASET_SOURCE': (
             refresh_aligned_1m_exchange_from_binance_futures_origo_module.BINANCE_FUTURES_DATASET_SOURCE
+        ),
+        'create_binance_spot_depth20_snapshots_table_origo': (
+            create_binance_spot_depth20_snapshots_table_origo_module.create_binance_spot_depth20_snapshots_table_origo
+        ),
+        'sync_binance_spot_depth20_snapshots_to_origo': (
+            sync_binance_spot_depth20_snapshots_to_origo_module.sync_binance_spot_depth20_snapshots_to_origo
+        ),
+        'create_binance_spot_depth20_1m_table_origo': (
+            create_binance_spot_depth20_1m_table_origo_module.create_binance_spot_depth20_1m_table_origo
+        ),
+        'refresh_binance_spot_depth20_1m_origo': (
+            refresh_binance_spot_depth20_1m_origo_module.refresh_binance_spot_depth20_1m_origo
+        ),
+        'DEPTH20_SNAPSHOTS_TABLE_NAME': (
+            create_binance_spot_depth20_snapshots_table_origo_module.SNAPSHOTS_TABLE_NAME
+        ),
+        'DEPTH20_1M_TABLE_NAME': (
+            create_binance_spot_depth20_1m_table_origo_module.DEPTH20_1M_TABLE_NAME
         ),
     }
 
@@ -367,6 +454,35 @@ def materialize_binance_futures_data_source_assets(
                 origo_assets['refresh_aligned_1m_exchange_from_binance_futures_origo'],
             ],
             partition_key=partition_key,
+        )
+
+    return _run
+
+
+@pytest.fixture()
+def materialize_binance_spot_depth20_data_source_assets(
+    origo_assets: dict[str, Any],
+) -> Any:
+    def _run(*, minute_start: str = '2026-05-13T13:23:00+00:00') -> Any:
+        run_config = {
+            'ops': {
+                'sync_binance_spot_depth20_snapshots_to_origo': {
+                    'config': {'minute_start': minute_start}
+                },
+                'refresh_binance_spot_depth20_1m_origo': {
+                    'config': {'minute_start': minute_start}
+                },
+            }
+        }
+        return materialize(
+            [
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_spot_depth20_snapshots_table_origo'],
+                origo_assets['create_binance_spot_depth20_1m_table_origo'],
+                origo_assets['sync_binance_spot_depth20_snapshots_to_origo'],
+                origo_assets['refresh_binance_spot_depth20_1m_origo'],
+            ],
+            run_config=run_config,
         )
 
     return _run
