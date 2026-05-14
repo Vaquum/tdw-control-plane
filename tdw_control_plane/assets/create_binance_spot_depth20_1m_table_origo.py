@@ -16,13 +16,14 @@ def _create_depth20_1m_table(client: ClickHouseClient, settings: ClickHouseSetti
         f"""
         CREATE TABLE IF NOT EXISTS {settings.database}.{DEPTH20_1M_TABLE_NAME} (
             datetime DateTime,
+            source_timestamp_ms UInt64,
             book_mid_price Float64,
             book_spread_bps Float64,
             book_bid_depth_20_notional Float64,
             book_ask_depth_20_notional Float64,
             book_imbalance_20 Float64
         )
-        ENGINE = ReplacingMergeTree()
+        ENGINE = ReplacingMergeTree(source_timestamp_ms)
         PARTITION BY toYYYYMM(datetime)
         ORDER BY datetime
         """

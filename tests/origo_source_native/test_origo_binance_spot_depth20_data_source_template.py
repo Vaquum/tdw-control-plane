@@ -9,6 +9,7 @@ from .helpers import ORIGO_DATABASE
 DEPTH20_MINUTE_CONFIG = '2026-05-13T13:23:00+00:00'
 DEPTH20_EXPECTED_COLUMNS = [
     'datetime',
+    'source_timestamp_ms',
     'book_mid_price',
     'book_spread_bps',
     'book_bid_depth_20_notional',
@@ -94,7 +95,7 @@ def test_binance_spot_depth20_source_native_schema_matches_history_payload(
     )
 
 
-def test_binance_spot_depth20_1m_schema_contains_datetime_and_five_scalar_book_columns(
+def test_binance_spot_depth20_1m_schema_contains_bookkeeping_and_five_scalar_book_columns(
     query_origo,
     origo_assets: dict[str, object],
 ) -> None:
@@ -113,7 +114,7 @@ def test_binance_spot_depth20_1m_schema_contains_datetime_and_five_scalar_book_c
     )
 
     assert [name for name, *_ in rows] == DEPTH20_EXPECTED_COLUMNS
-    assert [type_name for _, type_name, *_ in rows] == ['DateTime', *(['Float64'] * 5)]
+    assert [type_name for _, type_name, *_ in rows] == ['DateTime', 'UInt64', *(['Float64'] * 5)]
     assert _table_metadata(query_origo, origo_assets['DEPTH20_1M_TABLE_NAME']) == (
         'ReplacingMergeTree',
         'toYYYYMM(datetime)',

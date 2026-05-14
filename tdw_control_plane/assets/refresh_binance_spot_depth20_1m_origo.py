@@ -68,6 +68,7 @@ def _insert_minute_row(
         INSERT INTO {database}.{DEPTH20_1M_TABLE_NAME}
         SELECT
             toStartOfMinute(datetime) AS datetime,
+            source_timestamp_ms,
             (bids[1].1 + asks[1].1) / 2 AS book_mid_price,
             ((asks[1].1 - bids[1].1) / book_mid_price) * 10000 AS book_spread_bps,
             arraySum(arrayMap(x -> x.1 * x.2, bids)) AS book_bid_depth_20_notional,
