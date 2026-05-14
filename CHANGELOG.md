@@ -1,3 +1,6 @@
+# v1.7.0 on May 14, 2026
+- Add the Binance spot depth20 history service as an Origo source with source-native snapshots and a 1-minute source projection.
+
 # v1.6.7 on May 1, 2026
 - Add `audit_main_ruleset`, a privileged post-merge `main` workflow that audits full live parity of ruleset `5406599`, including `bypass_actors`, against `.github/rulesets/main.json`.
 - Add `tools/privileged_ruleset_audit.py` and `tests/tools/test_privileged_ruleset_audit.py`, including the fail-loud contract for missing or underscoped visibility of `bypass_actors` and the live-payload snapshot on failure.

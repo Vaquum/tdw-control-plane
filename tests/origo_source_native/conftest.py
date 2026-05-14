@@ -242,6 +242,18 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     refresh_aligned_1m_exchange_from_binance_futures_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_futures_origo'
     )
+    create_binance_spot_depth20_snapshots_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo'
+    )
+    sync_binance_spot_depth20_snapshots_to_origo_module = _reload_module(
+        'tdw_control_plane.assets.sync_binance_spot_depth20_snapshots_to_origo'
+    )
+    create_binance_spot_depth20_1m_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_depth20_1m_table_origo'
+    )
+    refresh_binance_spot_depth20_1m_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_depth20_1m_origo'
+    )
 
     return {
         'create_origo_database': create_origo_database_module.create_origo_database,
@@ -292,6 +304,24 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         ),
         'BINANCE_FUTURES_DATASET_SOURCE': (
             refresh_aligned_1m_exchange_from_binance_futures_origo_module.BINANCE_FUTURES_DATASET_SOURCE
+        ),
+        'create_binance_spot_depth20_snapshots_table_origo': (
+            create_binance_spot_depth20_snapshots_table_origo_module.create_binance_spot_depth20_snapshots_table_origo
+        ),
+        'sync_binance_spot_depth20_snapshots_to_origo': (
+            sync_binance_spot_depth20_snapshots_to_origo_module.sync_binance_spot_depth20_snapshots_to_origo
+        ),
+        'create_binance_spot_depth20_1m_table_origo': (
+            create_binance_spot_depth20_1m_table_origo_module.create_binance_spot_depth20_1m_table_origo
+        ),
+        'refresh_binance_spot_depth20_1m_origo': (
+            refresh_binance_spot_depth20_1m_origo_module.refresh_binance_spot_depth20_1m_origo
+        ),
+        'DEPTH20_SNAPSHOTS_TABLE_NAME': (
+            create_binance_spot_depth20_snapshots_table_origo_module.SNAPSHOTS_TABLE_NAME
+        ),
+        'DEPTH20_1M_TABLE_NAME': (
+            create_binance_spot_depth20_1m_table_origo_module.DEPTH20_1M_TABLE_NAME
         ),
     }
 

@@ -66,8 +66,17 @@ from .assets.create_binance_spot_klines_table_origo import (
 from .assets.create_binance_futures_klines_table_origo import (
     create_binance_futures_klines_table_origo,
 )
+from .assets.create_binance_spot_depth20_1m_table_origo import (
+    create_binance_spot_depth20_1m_table_origo,
+)
+from .assets.create_binance_spot_depth20_snapshots_table_origo import (
+    create_binance_spot_depth20_snapshots_table_origo,
+)
 from .assets.refresh_binance_spot_klines_origo import refresh_binance_spot_klines_origo
 from .assets.refresh_binance_futures_klines_origo import refresh_binance_futures_klines_origo
+from .assets.refresh_binance_spot_depth20_1m_origo import (
+    refresh_binance_spot_depth20_1m_origo,
+)
 from .assets.create_aligned_1m_exchange_table_origo import (
     create_aligned_1m_exchange_table_origo,
 )
@@ -77,6 +86,9 @@ from .assets.refresh_aligned_1m_exchange_from_binance_spot_origo import (
 )
 from .assets.refresh_aligned_1m_exchange_from_binance_futures_origo import (
     refresh_aligned_1m_exchange_from_binance_futures_origo,
+)
+from .assets.sync_binance_spot_depth20_snapshots_to_origo import (
+    sync_binance_spot_depth20_snapshots_to_origo,
 )
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
@@ -169,6 +181,14 @@ refresh_binance_futures_data_source_job = define_asset_job(
         "refresh_binance_futures_klines_origo",
         "refresh_aligned_1m_exchange_from_binance_futures_origo",
     ])
+
+refresh_binance_spot_depth20_data_source_job = define_asset_job(
+    name='refresh_binance_spot_depth20_data_source_job',
+    selection=[
+        'sync_binance_spot_depth20_snapshots_to_origo',
+        'refresh_binance_spot_depth20_1m_origo',
+    ],
+)
 
 insert_daily_binance_trades_tdw_job = define_asset_job(
     name="insert_daily_trades_to_tdw_job",
@@ -355,6 +375,29 @@ def _scheduled_time(context: ScheduleEvaluationContext) -> datetime:
     return context.scheduled_execution_time or datetime.now(timezone.utc)
 
 
+def _last_completed_minute(scheduled_time: datetime | None) -> datetime:
+    reference_time = scheduled_time or datetime.now(timezone.utc)
+    if reference_time.tzinfo is None:
+        reference_time = reference_time.replace(tzinfo=timezone.utc)
+    return reference_time.astimezone(timezone.utc).replace(second=0, microsecond=0) - timedelta(
+        minutes=1
+    )
+
+
+def _binance_spot_depth20_run_config(minute_start: datetime) -> dict[str, object]:
+    minute_start_iso = minute_start.isoformat()
+    return {
+        'ops': {
+            'sync_binance_spot_depth20_snapshots_to_origo': {
+                'config': {'minute_start': minute_start_iso}
+            },
+            'refresh_binance_spot_depth20_1m_origo': {
+                'config': {'minute_start': minute_start_iso}
+            },
+        }
+    }
+
+
 daily_binance_spot_pipeline_schedule = build_schedule_from_partitioned_job(
     refresh_binance_spot_data_source_job,
     name='daily_binance_spot_pipeline_schedule',
@@ -369,6 +412,20 @@ daily_binance_futures_pipeline_schedule = build_schedule_from_partitioned_job(
     hour_of_day=10,
     default_status=DefaultScheduleStatus.RUNNING,
 )
+
+
+@schedule(
+    job=refresh_binance_spot_depth20_data_source_job,
+    cron_schedule='* * * * *',
+    execution_timezone='UTC',
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+def binance_spot_depth20_1m_schedule(context: ScheduleEvaluationContext) -> RunRequest:
+    minute_start = _last_completed_minute(context.scheduled_execution_time)
+    return RunRequest(
+        run_key=f'binance_spot_depth20::{minute_start.isoformat()}',
+        run_config=_binance_spot_depth20_run_config(minute_start),
+    )
 
 
 @schedule(
@@ -486,6 +543,8 @@ defs = Definitions(
             create_binance_daily_futures_trades_table_origo,
             create_binance_spot_klines_table_origo,
             create_binance_futures_klines_table_origo,
+            create_binance_spot_depth20_snapshots_table_origo,
+            create_binance_spot_depth20_1m_table_origo,
             create_aligned_1m_exchange_table_origo,
             create_binance_trades_complete_view,
             insert_monthly_binance_trades_to_tdw,
@@ -493,6 +552,8 @@ defs = Definitions(
             insert_daily_binance_futures_trades_to_origo,
             refresh_binance_spot_klines_origo,
             refresh_binance_futures_klines_origo,
+            sync_binance_spot_depth20_snapshots_to_origo,
+            refresh_binance_spot_depth20_1m_origo,
             refresh_aligned_1m_exchange_from_binance_spot_origo,
             refresh_aligned_1m_exchange_from_binance_futures_origo,
             insert_daily_binance_trades_to_tdw,
@@ -515,6 +576,7 @@ defs = Definitions(
     schedules=[
         daily_binance_spot_pipeline_schedule,
         daily_binance_futures_pipeline_schedule,
+        binance_spot_depth20_1m_schedule,
         daily_tdw_pipeline_schedule,
         monthly_tdw_rollforward_schedule,
     ],
@@ -536,6 +598,7 @@ defs = Definitions(
           insert_monthly_binance_trades_job,
           refresh_binance_spot_data_source_job,
           refresh_binance_futures_data_source_job,
+          refresh_binance_spot_depth20_data_source_job,
           insert_daily_binance_trades_tdw_job,
           publish_binance_spot_klines_to_huggingface_job,
           roll_forward_monthly_binance_trades_job,
