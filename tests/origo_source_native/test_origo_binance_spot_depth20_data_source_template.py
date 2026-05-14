@@ -129,7 +129,7 @@ def test_binance_spot_depth20_source_native_schema_matches_history_payload(
         'Array(Tuple(Float64, Float64))',
     ]
     assert _table_metadata(query_origo, origo_assets['DEPTH20_SNAPSHOTS_TABLE_NAME']) == (
-        'MergeTree',
+        'ReplacingMergeTree',
         'toYYYYMM(datetime)',
         'datetime',
     )
@@ -156,7 +156,7 @@ def test_binance_spot_depth20_1m_schema_contains_datetime_and_five_scalar_book_c
     assert [name for name, *_ in rows] == DEPTH20_EXPECTED_COLUMNS
     assert [type_name for _, type_name, *_ in rows] == ['DateTime', *(['Float64'] * 5)]
     assert _table_metadata(query_origo, origo_assets['DEPTH20_1M_TABLE_NAME']) == (
-        'MergeTree',
+        'ReplacingMergeTree',
         'toYYYYMM(datetime)',
         'datetime',
     )
@@ -193,7 +193,7 @@ def test_sync_binance_spot_depth20_snapshots_reads_history_api_fixture_shape(
             bids[1].2,
             asks[1].1,
             asks[1].2
-        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_SNAPSHOTS_TABLE_NAME']}
+        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_SNAPSHOTS_TABLE_NAME']} FINAL
         ORDER BY datetime
         """
     )
@@ -218,7 +218,7 @@ def test_sync_binance_spot_depth20_snapshots_is_idempotent_for_minute(
     rows = query_origo(
         f"""
         SELECT count()
-        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_SNAPSHOTS_TABLE_NAME']}
+        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_SNAPSHOTS_TABLE_NAME']} FINAL
         WHERE datetime >= toDateTime64('{DEPTH20_MINUTE_SQL}.000', 3)
           AND datetime < toDateTime64('2026-05-13 13:24:00.000', 3)
         """
@@ -237,7 +237,7 @@ def test_refresh_binance_spot_depth20_1m_uses_last_row_of_last_completed_minute(
     rows = query_origo(
         f"""
         SELECT datetime, book_mid_price
-        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_1M_TABLE_NAME']}
+        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_1M_TABLE_NAME']} FINAL
         ORDER BY datetime
         """
     )
@@ -261,7 +261,7 @@ def test_refresh_binance_spot_depth20_1m_computes_book_scalar_columns(
             book_bid_depth_20_notional,
             book_ask_depth_20_notional,
             book_imbalance_20
-        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_1M_TABLE_NAME']}
+        FROM {ORIGO_DATABASE}.{origo_assets['DEPTH20_1M_TABLE_NAME']} FINAL
         WHERE datetime = toDateTime('{DEPTH20_MINUTE_SQL}')
         """
     )

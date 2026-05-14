@@ -105,7 +105,7 @@ def _create_snapshots_table(client: ClickHouseClient, settings: ClickHouseSettin
             bids Array(Tuple(Float64, Float64)),
             asks Array(Tuple(Float64, Float64))
         )
-        ENGINE = MergeTree()
+        ENGINE = ReplacingMergeTree(source_timestamp_ms)
         PARTITION BY toYYYYMM(datetime)
         ORDER BY datetime
         """

@@ -22,7 +22,7 @@ def _create_depth20_1m_table(client: ClickHouseClient, settings: ClickHouseSetti
             book_ask_depth_20_notional Float64,
             book_imbalance_20 Float64
         )
-        ENGINE = MergeTree()
+        ENGINE = ReplacingMergeTree()
         PARTITION BY toYYYYMM(datetime)
         ORDER BY datetime
         """

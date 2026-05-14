@@ -82,22 +82,6 @@ def _download_history(base_url: str, auth_token: str, minute_start: datetime) ->
     return response.text
 
 
-def _delete_minute_rows(
-    client: ClickHouseClient,
-    database: str,
-    minute_start: datetime,
-) -> None:
-    minute_end = minute_start + timedelta(minutes=1)
-    client.execute(
-        f"""
-        ALTER TABLE {database}.{SNAPSHOTS_TABLE_NAME}
-        DELETE WHERE datetime >= toDateTime64('{_clickhouse_datetime64(minute_start)}', 3)
-          AND datetime < toDateTime64('{_clickhouse_datetime64(minute_end)}', 3)
-        """,
-        settings={'mutations_sync': 2},
-    )
-
-
 def _count_minute_rows(
     client: ClickHouseClient,
     database: str,
@@ -107,7 +91,7 @@ def _count_minute_rows(
     result = client.execute(
         f"""
         SELECT count()
-        FROM {database}.{SNAPSHOTS_TABLE_NAME}
+        FROM {database}.{SNAPSHOTS_TABLE_NAME} FINAL
         WHERE datetime >= toDateTime64('{_clickhouse_datetime64(minute_start)}', 3)
           AND datetime < toDateTime64('{_clickhouse_datetime64(minute_end)}', 3)
         """
@@ -138,7 +122,6 @@ def sync_binance_spot_depth20_snapshots_to_origo(
     client = make_clickhouse_client(settings)
 
     try:
-        _delete_minute_rows(client, settings.database, minute_start)
         client.execute(
             f"""
             INSERT INTO {settings.database}.{SNAPSHOTS_TABLE_NAME}

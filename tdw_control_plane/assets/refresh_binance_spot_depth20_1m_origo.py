@@ -25,20 +25,6 @@ def _clickhouse_datetime(value: datetime) -> str:
     return utc_value.strftime('%Y-%m-%d %H:%M:%S')
 
 
-def _delete_minute_row(
-    client: ClickHouseClient,
-    database: str,
-    minute_start: datetime,
-) -> None:
-    client.execute(
-        f"""
-        ALTER TABLE {database}.{DEPTH20_1M_TABLE_NAME}
-        DELETE WHERE datetime = toDateTime('{_clickhouse_datetime(minute_start)}')
-        """,
-        settings={'mutations_sync': 2},
-    )
-
-
 def _count_source_rows(
     client: ClickHouseClient,
     database: str,
@@ -48,7 +34,7 @@ def _count_source_rows(
     result = client.execute(
         f"""
         SELECT count()
-        FROM {database}.{SNAPSHOTS_TABLE_NAME}
+        FROM {database}.{SNAPSHOTS_TABLE_NAME} FINAL
         WHERE datetime >= toDateTime64('{_clickhouse_datetime(minute_start)}.000', 3)
           AND datetime < toDateTime64('{_clickhouse_datetime(minute_end)}.000', 3)
         """
@@ -64,7 +50,7 @@ def _count_projection_rows(
     result = client.execute(
         f"""
         SELECT count()
-        FROM {database}.{DEPTH20_1M_TABLE_NAME}
+        FROM {database}.{DEPTH20_1M_TABLE_NAME} FINAL
         WHERE datetime = toDateTime('{_clickhouse_datetime(minute_start)}')
         """
     )
@@ -88,7 +74,7 @@ def _insert_minute_row(
             arraySum(arrayMap(x -> x.1 * x.2, asks)) AS book_ask_depth_20_notional,
             (book_bid_depth_20_notional - book_ask_depth_20_notional)
               / (book_bid_depth_20_notional + book_ask_depth_20_notional) AS book_imbalance_20
-        FROM {database}.{SNAPSHOTS_TABLE_NAME}
+        FROM {database}.{SNAPSHOTS_TABLE_NAME} FINAL
         WHERE datetime >= toDateTime64('{_clickhouse_datetime(minute_start)}.000', 3)
           AND datetime < toDateTime64('{_clickhouse_datetime(minute_end)}.000', 3)
         ORDER BY datetime DESC
@@ -120,7 +106,6 @@ def refresh_binance_spot_depth20_1m_origo(
                 f'No Binance spot depth20 source snapshots found for {minute_start.isoformat()}'
             )
 
-        _delete_minute_row(client, settings.database, minute_start)
         _insert_minute_row(client, settings.database, minute_start)
         inserted_count = _count_projection_rows(client, settings.database, minute_start)
 
