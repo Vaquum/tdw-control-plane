@@ -1,3 +1,6 @@
+# v1.7.1 on May 14, 2026
+- Add Dagster table-creation jobs for the Binance spot depth20 source-native snapshots and 1-minute projection tables.
+
 # v1.7.0 on May 14, 2026
 - Add the Binance spot depth20 history service as an Origo source with source-native snapshots and a 1-minute source projection.
 
