@@ -83,8 +83,8 @@ jobs:
           CLICKHOUSE_PASSWORD: test-password
           HF_TOKEN: test-token
           HUGGINGFACE_DATASET_REPO_ID: ${{ env.HUGGINGFACE_DATASET_REPO_ID }}
-          BINANCE_SPOT_DEPTH20_BASE_URL: https://example.invalid
-          BINANCE_SPOT_DEPTH20_AUTH_TOKEN: test-token
+          BINANCE_SPOT_DEPTH20_BASE_URL: ${{ secrets.BINANCE_SPOT_DEPTH20_BASE_URL }}
+          BINANCE_SPOT_DEPTH20_AUTH_TOKEN: ${{ secrets.BINANCE_SPOT_DEPTH20_AUTH_TOKEN }}
         run: docker compose -f docker-compose.deploy.yml config > /dev/null
 
       - name: Start SSH agent
