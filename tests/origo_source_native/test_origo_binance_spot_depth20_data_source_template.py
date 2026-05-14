@@ -125,11 +125,10 @@ def test_binance_spot_depth20_1m_schema_contains_bookkeeping_and_five_scalar_boo
 def test_binance_spot_depth20_table_creation_jobs_are_registered(
     origo_definitions_module,
 ) -> None:
-    repository_def = origo_definitions_module.defs.get_repository_def()
-    snapshots_job_def = repository_def.get_job_def(
+    snapshots_job_def = origo_definitions_module.defs.get_job_def(
         'create_binance_spot_depth20_snapshots_table_origo_job'
     )
-    projection_job_def = repository_def.get_job_def(
+    projection_job_def = origo_definitions_module.defs.get_job_def(
         'create_binance_spot_depth20_1m_table_origo_job'
     )
 
