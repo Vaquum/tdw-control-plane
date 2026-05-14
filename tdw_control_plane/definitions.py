@@ -139,6 +139,16 @@ create_binance_futures_klines_table_origo_job = define_asset_job(
     selection=["create_binance_futures_klines_table_origo"]
 )
 
+create_binance_spot_depth20_snapshots_table_origo_job = define_asset_job(
+    name="create_binance_spot_depth20_snapshots_table_origo_job",
+    selection=["create_binance_spot_depth20_snapshots_table_origo"]
+)
+
+create_binance_spot_depth20_1m_table_origo_job = define_asset_job(
+    name="create_binance_spot_depth20_1m_table_origo_job",
+    selection=["create_binance_spot_depth20_1m_table_origo"]
+)
+
 create_aligned_1m_exchange_table_origo_job = define_asset_job(
     name="create_aligned_1m_exchange_table_origo_job",
     selection=["create_aligned_1m_exchange_table_origo"]
@@ -593,6 +603,8 @@ defs = Definitions(
           create_binance_daily_futures_trades_table_origo_job,
           create_binance_spot_klines_table_origo_job,
           create_binance_futures_klines_table_origo_job,
+          create_binance_spot_depth20_snapshots_table_origo_job,
+          create_binance_spot_depth20_1m_table_origo_job,
           create_aligned_1m_exchange_table_origo_job,
           create_binance_trades_complete_view_job,
           insert_monthly_binance_trades_job,
