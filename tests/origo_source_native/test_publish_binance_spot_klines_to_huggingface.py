@@ -98,6 +98,9 @@ def test_publish_snapshot_reads_origo_spot_trades_with_shared_query(
     publish_module = importlib.import_module(
         'tdw_control_plane.assets.publish_binance_spot_klines_to_huggingface'
     )
+    publish_helper_module = importlib.import_module(
+        'tdw_control_plane.utils.publish_binance_spot_kline_snapshot_to_huggingface'
+    )
 
     class RecordingHfApi:
         def __init__(self, token: str) -> None:
@@ -149,9 +152,9 @@ def test_publish_snapshot_reads_origo_spot_trades_with_shared_query(
 
     monkeypatch.setenv('HF_TOKEN', 'test-token')
     monkeypatch.setenv('HUGGINGFACE_DATASET_REPO_ID', 'test/binance-klines')
-    monkeypatch.setattr(publish_module, 'HfApi', RecordingHfApi)
+    monkeypatch.setattr(publish_helper_module, 'HfApi', RecordingHfApi)
     monkeypatch.setattr(
-        publish_module,
+        publish_helper_module,
         'get_binance_spot_klines',
         recording_get_binance_spot_klines,
     )

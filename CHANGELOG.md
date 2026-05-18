@@ -1,5 +1,5 @@
 # v1.8.0 on May 18, 2026
-- Add a Hugging Face publisher for BTCUSDT 1-hour spot kline snapshots from Origo daily spot trades.
+- Add Hugging Face publishers for BTCUSDT 1-hour and 4-hour spot kline snapshots from Origo daily spot trades.
 
 # v1.7.1 on May 14, 2026
 - Add Dagster table-creation jobs for the Binance spot depth20 source-native snapshots and 1-minute projection tables.
