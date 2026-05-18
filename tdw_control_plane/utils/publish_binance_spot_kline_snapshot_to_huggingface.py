@@ -25,9 +25,12 @@ def _get_huggingface_token() -> str:
 
 def _get_huggingface_dataset_repo_id(
     *,
-    repo_id_env: str,
+    repo_id_env: str | None,
     default_repo_id: str,
 ) -> str:
+    if repo_id_env is None:
+        return default_repo_id
+
     return os.environ.get(repo_id_env, default_repo_id)
 
 
@@ -100,7 +103,7 @@ def publish_binance_spot_kline_snapshot_to_huggingface(
     kline_size_seconds: int,
     file_prefix: str,
     default_repo_id: str,
-    repo_id_env: str,
+    repo_id_env: str | None,
     cadence_label: str,
     resolution_label: str,
 ) -> dict[str, object]:

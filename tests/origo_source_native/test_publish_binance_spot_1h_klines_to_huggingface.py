@@ -153,7 +153,7 @@ def test_publish_1h_snapshot_reads_origo_spot_trades_with_shared_query(
         )
 
     monkeypatch.setenv('HF_TOKEN', 'test-token')
-    monkeypatch.setenv('HUGGINGFACE_1H_DATASET_REPO_ID', 'test/binance-1h-klines')
+    monkeypatch.setenv('HUGGINGFACE_DATASET_REPO_ID', 'test/not-used')
     monkeypatch.setattr(publish_helper_module, 'HfApi', RecordingHfApi)
     monkeypatch.setattr(
         publish_helper_module,
@@ -175,8 +175,8 @@ def test_publish_1h_snapshot_reads_origo_spot_trades_with_shared_query(
     assert isinstance(metadata, dict)
     assert isinstance(readme, str)
     assert uploaded['token'] == 'test-token'
-    assert uploaded['repo_id'] == 'test/binance-1h-klines'
-    assert uploaded['upload_repo_id'] == 'test/binance-1h-klines'
+    assert uploaded['repo_id'] == 'vaquum/binance_btcusdt_1h_klines'
+    assert uploaded['upload_repo_id'] == 'vaquum/binance_btcusdt_1h_klines'
     assert metadata['export_end_date'] == partition_key
     assert metadata['row_count'] == parquet.height
     assert parquet.columns == KLINE_EXPORT_COLUMNS

@@ -19,7 +19,7 @@ def publish_binance_spot_1h_klines_to_huggingface(
         kline_size_seconds=3600,
         file_prefix="btcusdt_1h_kline_20200101_to_",
         default_repo_id="vaquum/binance_btcusdt_1h_klines",
-        repo_id_env="HUGGINGFACE_1H_DATASET_REPO_ID",
+        repo_id_env=None,
         cadence_label="1h",
         resolution_label="1-hour",
     )
