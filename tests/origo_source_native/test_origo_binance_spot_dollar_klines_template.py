@@ -240,9 +240,10 @@ def test_dollar_kline_assets_and_job_are_registered(
     origo_definitions_module: object,
     origo_assets: dict[str, object],
 ) -> None:
-    repository_def = origo_definitions_module.defs.get_repository_def()
-    data_source_job = repository_def.get_job_def('refresh_binance_spot_data_source_job')
-    create_table_job = repository_def.get_job_def(
+    data_source_job = origo_definitions_module.defs.get_job_def(
+        'refresh_binance_spot_data_source_job'
+    )
+    create_table_job = origo_definitions_module.defs.get_job_def(
         'create_binance_spot_dollar_klines_table_origo_job'
     )
     node_names = set(data_source_job.graph.node_dict.keys())
