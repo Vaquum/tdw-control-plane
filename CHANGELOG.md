@@ -1,3 +1,6 @@
+# v1.9.0 on May 19, 2026
+- Add Binance spot dollar klines on Origo daily spot trades.
+
 # v1.8.0 on May 18, 2026
 - Add Hugging Face publishers for BTCUSDT 1-hour and 4-hour spot kline snapshots from Origo daily spot trades.
 
