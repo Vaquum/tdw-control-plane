@@ -34,8 +34,17 @@ from .assets.daily_trades_to_tdw import insert_daily_binance_trades_to_tdw
 from .assets.publish_binance_spot_klines_to_huggingface import (
     publish_binance_spot_klines_to_huggingface,
 )
+from .assets.publish_binance_spot_15m_klines_to_huggingface import (
+    publish_binance_spot_15m_klines_to_huggingface,
+)
+from .assets.publish_binance_spot_30m_klines_to_huggingface import (
+    publish_binance_spot_30m_klines_to_huggingface,
+)
 from .assets.publish_binance_spot_1h_klines_to_huggingface import (
     publish_binance_spot_1h_klines_to_huggingface,
+)
+from .assets.publish_binance_spot_2h_klines_to_huggingface import (
+    publish_binance_spot_2h_klines_to_huggingface,
 )
 from .assets.publish_binance_spot_4h_klines_to_huggingface import (
     publish_binance_spot_4h_klines_to_huggingface,
@@ -235,9 +244,21 @@ publish_binance_spot_klines_to_huggingface_job = define_asset_job(
     name="publish_binance_spot_klines_to_huggingface_job",
     selection=["publish_binance_spot_klines_to_huggingface"])
 
+publish_binance_spot_15m_klines_to_huggingface_job = define_asset_job(
+    name="publish_binance_spot_15m_klines_to_huggingface_job",
+    selection=["publish_binance_spot_15m_klines_to_huggingface"])
+
+publish_binance_spot_30m_klines_to_huggingface_job = define_asset_job(
+    name="publish_binance_spot_30m_klines_to_huggingface_job",
+    selection=["publish_binance_spot_30m_klines_to_huggingface"])
+
 publish_binance_spot_1h_klines_to_huggingface_job = define_asset_job(
     name="publish_binance_spot_1h_klines_to_huggingface_job",
     selection=["publish_binance_spot_1h_klines_to_huggingface"])
+
+publish_binance_spot_2h_klines_to_huggingface_job = define_asset_job(
+    name="publish_binance_spot_2h_klines_to_huggingface_job",
+    selection=["publish_binance_spot_2h_klines_to_huggingface"])
 
 publish_binance_spot_4h_klines_to_huggingface_job = define_asset_job(
     name="publish_binance_spot_4h_klines_to_huggingface_job",
@@ -595,6 +616,34 @@ def publish_binance_spot_klines_to_huggingface_sensor(
 
 @asset_sensor(
     asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    job=publish_binance_spot_15m_klines_to_huggingface_job,
+)
+def publish_binance_spot_15m_klines_to_huggingface_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_binance_spot_15m_klines_to_hf",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    job=publish_binance_spot_30m_klines_to_huggingface_job,
+)
+def publish_binance_spot_30m_klines_to_huggingface_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_binance_spot_30m_klines_to_hf",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
     job=publish_binance_spot_1h_klines_to_huggingface_job,
 )
 def publish_binance_spot_1h_klines_to_huggingface_sensor(
@@ -604,6 +653,20 @@ def publish_binance_spot_1h_klines_to_huggingface_sensor(
     return _publish_binance_spot_klines_to_hf_run_request(
         asset_event,
         run_key_prefix="publish_binance_spot_1h_klines_to_hf",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    job=publish_binance_spot_2h_klines_to_huggingface_job,
+)
+def publish_binance_spot_2h_klines_to_huggingface_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_binance_spot_2h_klines_to_hf",
     )
 
 
@@ -647,7 +710,10 @@ defs = Definitions(
             refresh_aligned_1m_exchange_from_binance_futures_origo,
             insert_daily_binance_trades_to_tdw,
             publish_binance_spot_klines_to_huggingface,
+            publish_binance_spot_15m_klines_to_huggingface,
+            publish_binance_spot_30m_klines_to_huggingface,
             publish_binance_spot_1h_klines_to_huggingface,
+            publish_binance_spot_2h_klines_to_huggingface,
             publish_binance_spot_4h_klines_to_huggingface,
             cleanup_binance_daily_trades_for_finalized_month,
             create_binance_trades_monthly_summary,
@@ -674,7 +740,10 @@ defs = Definitions(
 
     sensors=[
         publish_binance_spot_klines_to_huggingface_sensor,
+        publish_binance_spot_15m_klines_to_huggingface_sensor,
+        publish_binance_spot_30m_klines_to_huggingface_sensor,
         publish_binance_spot_1h_klines_to_huggingface_sensor,
+        publish_binance_spot_2h_klines_to_huggingface_sensor,
         publish_binance_spot_4h_klines_to_huggingface_sensor,
     ],
     
@@ -697,7 +766,10 @@ defs = Definitions(
           refresh_binance_spot_depth20_data_source_job,
           insert_daily_binance_trades_tdw_job,
           publish_binance_spot_klines_to_huggingface_job,
+          publish_binance_spot_15m_klines_to_huggingface_job,
+          publish_binance_spot_30m_klines_to_huggingface_job,
           publish_binance_spot_1h_klines_to_huggingface_job,
+          publish_binance_spot_2h_klines_to_huggingface_job,
           publish_binance_spot_4h_klines_to_huggingface_job,
           roll_forward_monthly_binance_trades_job,
           create_binance_trades_monthly_summary_job,
