@@ -9,6 +9,7 @@
 
 import os
 from datetime import datetime, timedelta, timezone
+from typing import Protocol
 
 import requests
 from clickhouse_driver import Client as ClickhouseClient
@@ -32,6 +33,12 @@ from .assets.daily_trades_to_origo import insert_daily_binance_spot_trades_to_or
 from .assets.daily_trades_to_tdw import insert_daily_binance_trades_to_tdw
 from .assets.publish_binance_spot_klines_to_huggingface import (
     publish_binance_spot_klines_to_huggingface,
+)
+from .assets.publish_binance_spot_1h_klines_to_huggingface import (
+    publish_binance_spot_1h_klines_to_huggingface,
+)
+from .assets.publish_binance_spot_4h_klines_to_huggingface import (
+    publish_binance_spot_4h_klines_to_huggingface,
 )
 from .assets.monthly_trades_to_tdw import insert_monthly_binance_trades_to_tdw
 from .assets.create_tdw_database import create_tdw_database
@@ -98,6 +105,14 @@ CLICKHOUSE_PASSWORD = os.environ.get("CLICKHOUSE_PASSWORD")
 CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "tdw")
 MAX_DAILY_BACKFILL_RUNS_PER_TICK = 14
 MAX_AUTOMATED_DAILY_BACKFILL_GAP_DAYS = 14
+
+
+class _DagsterEventLike(Protocol):
+    partition: str | None
+
+
+class _AssetEventLike(Protocol):
+    dagster_event: _DagsterEventLike | None
 
 
 # Database Maintenance Jobs
@@ -207,6 +222,14 @@ insert_daily_binance_trades_tdw_job = define_asset_job(
 publish_binance_spot_klines_to_huggingface_job = define_asset_job(
     name="publish_binance_spot_klines_to_huggingface_job",
     selection=["publish_binance_spot_klines_to_huggingface"])
+
+publish_binance_spot_1h_klines_to_huggingface_job = define_asset_job(
+    name="publish_binance_spot_1h_klines_to_huggingface_job",
+    selection=["publish_binance_spot_1h_klines_to_huggingface"])
+
+publish_binance_spot_4h_klines_to_huggingface_job = define_asset_job(
+    name="publish_binance_spot_4h_klines_to_huggingface_job",
+    selection=["publish_binance_spot_4h_klines_to_huggingface"])
 
 insert_monthly_binance_agg_trades_job = define_asset_job(
     name="insert_monthly_agg_trades_to_tdw_job",
@@ -524,11 +547,11 @@ def monthly_tdw_rollforward_schedule(context: ScheduleEvaluationContext):
     )
 
 
-@asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
-    job=publish_binance_spot_klines_to_huggingface_job,
-)
-def publish_binance_spot_klines_to_huggingface_sensor(context, asset_event):
+def _publish_binance_spot_klines_to_hf_run_request(
+    asset_event: _AssetEventLike,
+    *,
+    run_key_prefix: str,
+) -> RunRequest | SkipReason:
     if not asset_event.dagster_event:
         return SkipReason(
             "No Dagster event was attached to the Origo spot trades materialization."
@@ -540,7 +563,49 @@ def publish_binance_spot_klines_to_huggingface_sensor(context, asset_event):
 
     return RunRequest(
         partition_key=partition_key,
-        run_key=f"publish_binance_spot_klines_to_hf::{partition_key}",
+        run_key=f"{run_key_prefix}::{partition_key}",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    job=publish_binance_spot_klines_to_huggingface_job,
+)
+def publish_binance_spot_klines_to_huggingface_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_binance_spot_klines_to_hf",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    job=publish_binance_spot_1h_klines_to_huggingface_job,
+)
+def publish_binance_spot_1h_klines_to_huggingface_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_binance_spot_1h_klines_to_hf",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    job=publish_binance_spot_4h_klines_to_huggingface_job,
+)
+def publish_binance_spot_4h_klines_to_huggingface_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_binance_spot_4h_klines_to_hf",
     )
 
 
@@ -568,6 +633,8 @@ defs = Definitions(
             refresh_aligned_1m_exchange_from_binance_futures_origo,
             insert_daily_binance_trades_to_tdw,
             publish_binance_spot_klines_to_huggingface,
+            publish_binance_spot_1h_klines_to_huggingface,
+            publish_binance_spot_4h_klines_to_huggingface,
             cleanup_binance_daily_trades_for_finalized_month,
             create_binance_trades_monthly_summary,
             create_binance_trades_daily_summary,
@@ -593,6 +660,8 @@ defs = Definitions(
 
     sensors=[
         publish_binance_spot_klines_to_huggingface_sensor,
+        publish_binance_spot_1h_klines_to_huggingface_sensor,
+        publish_binance_spot_4h_klines_to_huggingface_sensor,
     ],
     
     jobs=[create_tdw_database_job,
@@ -613,6 +682,8 @@ defs = Definitions(
           refresh_binance_spot_depth20_data_source_job,
           insert_daily_binance_trades_tdw_job,
           publish_binance_spot_klines_to_huggingface_job,
+          publish_binance_spot_1h_klines_to_huggingface_job,
+          publish_binance_spot_4h_klines_to_huggingface_job,
           roll_forward_monthly_binance_trades_job,
           create_binance_trades_monthly_summary_job,
           create_binance_trades_daily_summary_job,
