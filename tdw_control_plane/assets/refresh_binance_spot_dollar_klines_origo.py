@@ -112,7 +112,11 @@ def _insert_partition_rows(
         insert_daily_binance_spot_trades_to_origo,
     ],
     group_name='binance_data',
-    description='Refreshes the Binance spot dollar kline projection from source-native daily trades',
+    description=(
+        'Refreshes the daily-scoped Binance spot dollar kline projection from '
+        'source-native daily trades; dollar_bar_id resets each date and the final '
+        'daily bar may be below the dollar threshold.'
+    ),
 )
 def refresh_binance_spot_dollar_klines_origo(
     context: AssetExecutionContext,

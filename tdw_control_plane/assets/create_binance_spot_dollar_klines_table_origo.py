@@ -20,7 +20,7 @@ def _create_dollar_klines_table(
         f"""
         CREATE TABLE IF NOT EXISTS {settings.database}.{DOLLAR_KLINES_TABLE_NAME} (
             datetime DateTime,
-            dollar_bar_id UInt64,
+            dollar_bar_id UInt64 COMMENT 'Partition-date scoped id; resets each day and may skip ids when one trade crosses multiple dollar thresholds.',
             open Float64,
             high Float64,
             low Float64,
@@ -50,7 +50,10 @@ def _create_dollar_klines_table(
 @asset(
     group_name='origo_setup',
     deps=[create_origo_database],
-    description='Creates the binance_spot_dollar_klines table if it does not exist',
+    description=(
+        'Creates the binance_spot_dollar_klines table if it does not exist. '
+        'dollar_bar_id is scoped to each partition date and may be non-contiguous.'
+    ),
 )
 def create_binance_spot_dollar_klines_table_origo(
     context: AssetExecutionContext,
