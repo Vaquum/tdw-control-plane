@@ -8,7 +8,8 @@ import pytest
 from .helpers import ORIGO_DATABASE
 
 DOLLAR_KLINE_COLUMNS = [
-    'datetime',
+    'start_datetime',
+    'end_datetime',
     'dollar_bar_id',
     'open',
     'high',
@@ -30,6 +31,7 @@ DOLLAR_KLINE_COLUMNS = [
     'maker_liquidity',
 ]
 DOLLAR_KLINE_COLUMN_TYPES = [
+    'DateTime',
     'DateTime',
     'UInt64',
     *(['Float64'] * 10),
@@ -96,12 +98,12 @@ def test_binance_spot_dollar_klines_schema_matches_spot_kline_statistics_contrac
     assert [type_name for _, type_name, *_ in rows] == DOLLAR_KLINE_COLUMN_TYPES
     assert _table_metadata(query_origo, str(origo_assets['DOLLAR_KLINES_TABLE_NAME'])) == (
         'MergeTree',
-        'toYYYYMM(datetime)',
-        'datetime, dollar_bar_id',
+        'toYYYYMM(start_datetime)',
+        'start_datetime, end_datetime, dollar_bar_id',
     )
 
 
-def test_binance_spot_dollar_klines_rows_match_fixture_for_small_threshold(
+def test_binance_spot_dollar_klines_rows_match_fixture_with_exact_bar_range(
     monkeypatch: pytest.MonkeyPatch,
     materialize_binance_spot_dollar_klines_assets: Callable[..., object],
     query_origo: Callable[[str], list[tuple[object, ...]]],
@@ -110,7 +112,7 @@ def test_binance_spot_dollar_klines_rows_match_fixture_for_small_threshold(
     monkeypatch.setattr(
         origo_assets['refresh_binance_spot_dollar_klines_origo_module'],
         'DOLLAR_KLINE_SIZE',
-        40.0,
+        200.0,
     )
 
     result = materialize_binance_spot_dollar_klines_assets(partition_key='2024-01-01')
@@ -121,77 +123,34 @@ def test_binance_spot_dollar_klines_rows_match_fixture_for_small_threshold(
         SELECT
             {', '.join(DOLLAR_KLINE_COLUMNS)}
         FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_KLINES_TABLE_NAME']}
-        WHERE toDate(datetime) = toDate('2024-01-01')
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
         ORDER BY dollar_bar_id
         """
     )
 
     assert _rows_to_dicts(DOLLAR_KLINE_COLUMNS, rows) == [
         {
-            'datetime': '2024-01-01 00:00:00',
+            'start_datetime': '2024-01-01 00:00:00',
+            'end_datetime': '2024-01-01 00:00:02',
             'dollar_bar_id': 0,
             'open': 42000.1,
-            'high': 42000.1,
-            'low': 42000.1,
-            'close': 42000.1,
-            'mean': 42000.1,
-            'std': 0.0,
-            'median': 42000.1,
-            'iqr': 0.0,
-            'volume': 0.001,
-            'maker_ratio': 1.0,
-            'no_of_trades': 1,
-            'open_liquidity': 42.000099999999996,
-            'high_liquidity': 42.000099999999996,
-            'low_liquidity': 42.000099999999996,
-            'close_liquidity': 42.000099999999996,
-            'liquidity_sum': 42.000099999999996,
-            'maker_volume': 0.001,
-            'maker_liquidity': 42.000099999999996,
-        },
-        {
-            'datetime': '2024-01-01 00:00:01',
-            'dollar_bar_id': 1,
-            'open': 42010.0,
             'high': 42010.0,
-            'low': 42010.0,
-            'close': 42010.0,
-            'mean': 42010.0,
-            'std': 0.0,
-            'median': 42010.0,
-            'iqr': 0.0,
-            'volume': 0.002,
-            'maker_ratio': 0.0,
-            'no_of_trades': 1,
-            'open_liquidity': 84.02,
-            'high_liquidity': 84.02,
-            'low_liquidity': 84.02,
-            'close_liquidity': 84.02,
-            'liquidity_sum': 84.02,
-            'maker_volume': 0.0,
-            'maker_liquidity': 0.0,
-        },
-        {
-            'datetime': '2024-01-01 00:00:02',
-            'dollar_bar_id': 3,
-            'open': 42005.5,
-            'high': 42005.5,
-            'low': 42005.5,
+            'low': 42000.1,
             'close': 42005.5,
-            'mean': 42005.5,
-            'std': 0.0,
+            'mean': 42005.200000000004,
+            'std': 4.047221268968605,
             'median': 42005.5,
-            'iqr': 0.0,
-            'volume': 0.0015,
-            'maker_ratio': 1.0,
-            'no_of_trades': 1,
-            'open_liquidity': 63.008250000000004,
-            'high_liquidity': 63.008250000000004,
-            'low_liquidity': 63.008250000000004,
+            'iqr': 9.900000000001455,
+            'volume': 0.0045000000000000005,
+            'maker_ratio': 0.6666666666666666,
+            'no_of_trades': 3,
+            'open_liquidity': 42.000099999999996,
+            'high_liquidity': 84.02,
+            'low_liquidity': 42.000099999999996,
             'close_liquidity': 63.008250000000004,
-            'liquidity_sum': 63.008250000000004,
-            'maker_volume': 0.0015,
-            'maker_liquidity': 63.008250000000004,
+            'liquidity_sum': 189.02835,
+            'maker_volume': 0.0025,
+            'maker_liquidity': 105.00835000000001,
         },
     ]
 
@@ -214,7 +173,7 @@ def test_same_partition_rerun_is_idempotent_for_dollar_klines(
         SELECT
             {', '.join(DOLLAR_KLINE_COLUMNS)}
         FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_KLINES_TABLE_NAME']}
-        WHERE toDate(datetime) = toDate('2024-01-01')
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
         ORDER BY dollar_bar_id
         """
     )
@@ -225,7 +184,7 @@ def test_same_partition_rerun_is_idempotent_for_dollar_klines(
         SELECT
             {', '.join(DOLLAR_KLINE_COLUMNS)}
         FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_KLINES_TABLE_NAME']}
-        WHERE toDate(datetime) = toDate('2024-01-01')
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
         ORDER BY dollar_bar_id
         """
     )

@@ -31,7 +31,7 @@ def _delete_partition_rows(
     client.execute(
         f"""
         ALTER TABLE {database}.{DOLLAR_KLINES_TABLE_NAME}
-        DELETE WHERE toDate(datetime) = toDate('{partition_date}')
+        DELETE WHERE toDate(start_datetime) = toDate('{partition_date}')
         """,
         settings={'mutations_sync': 2},
     )
@@ -46,7 +46,7 @@ def _count_partition_rows(
         f"""
         SELECT count()
         FROM {database}.{DOLLAR_KLINES_TABLE_NAME}
-        WHERE toDate(datetime) = toDate('{partition_date}')
+        WHERE toDate(start_datetime) = toDate('{partition_date}')
         """
     )
     return int(result[0][0])
@@ -61,7 +61,8 @@ def _insert_partition_rows(
         f"""
         INSERT INTO {database}.{DOLLAR_KLINES_TABLE_NAME}
         SELECT
-            max(datetime) AS datetime,
+            min(datetime) AS start_datetime,
+            max(datetime) AS end_datetime,
             dollar_bar_id,
             argMin(price, trade_id) AS open,
             max(price) AS high,

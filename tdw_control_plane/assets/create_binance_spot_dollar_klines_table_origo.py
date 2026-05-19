@@ -19,7 +19,8 @@ def _create_dollar_klines_table(
     client.execute(
         f"""
         CREATE TABLE IF NOT EXISTS {settings.database}.{DOLLAR_KLINES_TABLE_NAME} (
-            datetime DateTime,
+            start_datetime DateTime,
+            end_datetime DateTime,
             dollar_bar_id UInt64 COMMENT 'Partition-date scoped id; resets each day and may skip ids when one trade crosses multiple dollar thresholds.',
             open Float64,
             high Float64,
@@ -41,8 +42,8 @@ def _create_dollar_klines_table(
             maker_liquidity Float64
         )
         ENGINE = MergeTree()
-        PARTITION BY toYYYYMM(datetime)
-        ORDER BY (datetime, dollar_bar_id)
+        PARTITION BY toYYYYMM(start_datetime)
+        ORDER BY (start_datetime, end_datetime, dollar_bar_id)
         """
     )
 
