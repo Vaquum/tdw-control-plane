@@ -4,6 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 import pytest
+from dagster import DefaultScheduleStatus
 
 from .helpers import ORIGO_DATABASE
 
@@ -195,10 +196,14 @@ def test_same_partition_rerun_is_idempotent_for_dollar_klines(
     assert len(second_rows) == 3
 
 
-def test_dollar_kline_assets_and_job_are_registered(
+def test_dollar_kline_assets_job_and_schedule_are_registered(
     origo_definitions_module: object,
     origo_assets: dict[str, object],
 ) -> None:
+    schedule_def = origo_definitions_module.daily_binance_spot_pipeline_schedule
+    resolved_schedule_def = origo_definitions_module.defs.get_repository_def().get_schedule_def(
+        'daily_binance_spot_pipeline_schedule'
+    )
     data_source_job = origo_definitions_module.defs.get_job_def(
         'refresh_binance_spot_data_source_job'
     )
@@ -209,6 +214,10 @@ def test_dollar_kline_assets_and_job_are_registered(
     dollar_asset = origo_assets['refresh_binance_spot_dollar_klines_origo']
     dollar_deps = dollar_asset.asset_deps[dollar_asset.key]
 
+    assert schedule_def.job.name == 'refresh_binance_spot_data_source_job'
+    assert resolved_schedule_def.cron_schedule == '0 4 * * *'
+    assert resolved_schedule_def.execution_timezone == 'UTC'
+    assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert create_table_job.name == 'create_binance_spot_dollar_klines_table_origo_job'
     assert node_names >= {
         'insert_daily_binance_spot_trades_to_origo',
