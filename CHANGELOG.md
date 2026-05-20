@@ -1,5 +1,5 @@
 # v1.13.2 on May 20, 2026
-- Decouple the Binance spot dollar klines backfill job from raw-trades ingestion.
+- Decouple the Binance spot dollar klines backfill job from raw-trades ingestion and fail the dollar refresh when raw trades are absent.
 
 # v1.13.1 on May 20, 2026
 - Add a dedicated Binance spot dollar klines backfill job.

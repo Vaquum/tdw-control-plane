@@ -1,6 +1,5 @@
 from datetime import UTC, datetime, timedelta
 
-from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
 from .create_binance_spot_dollar_klines_table_origo import (
@@ -8,7 +7,11 @@ from .create_binance_spot_dollar_klines_table_origo import (
     create_binance_spot_dollar_klines_table_origo,
 )
 from .create_binance_trades_table_origo import RAW_TABLE_NAME
-from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_client
+from .create_origo_database import (
+    ClickHouseClientProtocol,
+    _get_clickhouse_settings,
+    _make_clickhouse_client,
+)
 from .daily_trades_to_origo import daily_partitions, insert_daily_binance_spot_trades_to_origo
 
 DOLLAR_KLINE_SIZE = 100_000.0
@@ -24,7 +27,7 @@ def _partition_date_from_context(context: AssetExecutionContext) -> str:
 
 
 def _delete_partition_rows(
-    client: ClickhouseClient,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> None:
@@ -38,7 +41,7 @@ def _delete_partition_rows(
 
 
 def _count_partition_rows(
-    client: ClickhouseClient,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> int:
@@ -52,8 +55,23 @@ def _count_partition_rows(
     return int(result[0][0])
 
 
+def _count_raw_partition_rows(
+    client: ClickHouseClientProtocol,
+    database: str,
+    partition_date: str,
+) -> int:
+    result = client.execute(
+        f"""
+        SELECT count()
+        FROM {database}.{RAW_TABLE_NAME}
+        WHERE toDate(datetime) = toDate('{partition_date}')
+        """
+    )
+    return int(result[0][0])
+
+
 def _insert_partition_rows(
-    client: ClickhouseClient,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> None:
@@ -127,6 +145,13 @@ def refresh_binance_spot_dollar_klines_origo(
     client = _make_clickhouse_client(settings)
 
     try:
+        raw_count = _count_raw_partition_rows(client, settings.database, partition_date)
+        if raw_count == 0:
+            raise RuntimeError(
+                f'Raw Binance spot trades are missing for {partition_date}. '
+                f'Run insert_daily_binance_spot_trades_to_origo for that partition first.'
+            )
+
         existing_count = _count_partition_rows(client, settings.database, partition_date)
         if existing_count > 0:
             context.log.info(
