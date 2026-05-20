@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 import pytest
-from dagster import DefaultScheduleStatus, materialize
+from dagster import DagsterInstance, DefaultScheduleStatus, materialize
 
 from .helpers import ORIGO_DATABASE
 
@@ -197,11 +197,21 @@ def test_same_partition_rerun_is_idempotent_for_dollar_klines(
 
 
 def test_dollar_kline_refresh_fails_before_replacing_when_raw_partition_is_absent(
-    materialize_binance_spot_dollar_klines_assets: Callable[..., object],
     query_origo: Callable[[str], list[tuple[object, ...]]],
     origo_assets: dict[str, object],
 ) -> None:
-    first = materialize_binance_spot_dollar_klines_assets(partition_key='2024-01-01')
+    instance = DagsterInstance.ephemeral()
+    first = materialize(
+        [
+            origo_assets['create_origo_database'],
+            origo_assets['create_binance_daily_spot_trades_table_origo'],
+            origo_assets['create_binance_spot_dollar_klines_table_origo'],
+            origo_assets['insert_daily_binance_spot_trades_to_origo'],
+            origo_assets['refresh_binance_spot_dollar_klines_origo'],
+        ],
+        instance=instance,
+        partition_key='2024-01-01',
+    )
     before_rows = query_origo(
         f"""
         SELECT count()
@@ -224,6 +234,7 @@ def test_dollar_kline_refresh_fails_before_replacing_when_raw_partition_is_absen
             origo_assets['create_binance_spot_dollar_klines_table_origo'],
             origo_assets['refresh_binance_spot_dollar_klines_origo'],
         ],
+        instance=instance,
         partition_key='2024-01-01',
         raise_on_error=False,
     )
