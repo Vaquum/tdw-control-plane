@@ -14,7 +14,7 @@ from .create_binance_spot_depth20_snapshots_table_origo import (
     make_clickhouse_client,
 )
 from .sync_binance_spot_depth20_snapshots_to_origo import (
-    MINUTE_START_CONFIG_KEY,
+    depth20_minute_partitions,
     minute_start_from_context,
     sync_binance_spot_depth20_snapshots_to_origo,
 )
@@ -85,12 +85,12 @@ def _insert_minute_row(
 
 
 @asset(
+    partitions_def=depth20_minute_partitions,
     group_name='binance_spot_depth20_data',
     deps=[
         create_binance_spot_depth20_1m_table_origo,
         sync_binance_spot_depth20_snapshots_to_origo,
     ],
-    config_schema={MINUTE_START_CONFIG_KEY: str},
     description='Refreshes the Binance spot depth20 1m source projection from source-native snapshots',
 )
 def refresh_binance_spot_depth20_1m_origo(

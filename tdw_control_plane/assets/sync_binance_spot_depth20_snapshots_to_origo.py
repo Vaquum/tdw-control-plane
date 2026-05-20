@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import requests
-from dagster import AssetExecutionContext, asset
+from dagster import AssetExecutionContext, TimeWindowPartitionsDefinition, asset
 
 from .create_binance_spot_depth20_snapshots_table_origo import (
     ClickHouseClient,
@@ -14,7 +14,14 @@ from .create_binance_spot_depth20_snapshots_table_origo import (
     make_clickhouse_client,
 )
 
-MINUTE_START_CONFIG_KEY = 'minute_start'
+DEPTH20_FIRST_MINUTE_UTC = '2026-05-14T10:28:00+0000'
+DEPTH20_PARTITION_KEY_FORMAT = '%Y-%m-%dT%H:%M:%S%z'
+depth20_minute_partitions = TimeWindowPartitionsDefinition(
+    start=DEPTH20_FIRST_MINUTE_UTC,
+    fmt=DEPTH20_PARTITION_KEY_FORMAT,
+    cron_schedule='* * * * *',
+    timezone='UTC',
+)
 SnapshotRow = tuple[datetime, int, int, list[tuple[float, float]], list[tuple[float, float]]]
 
 
@@ -26,9 +33,9 @@ def _require_env(name: str) -> str:
 
 
 def minute_start_from_context(context: AssetExecutionContext) -> datetime:
-    value = context.op_config.get(MINUTE_START_CONFIG_KEY)
-    if not isinstance(value, str):
-        raise RuntimeError(f'{MINUTE_START_CONFIG_KEY} run config must be set.')
+    value = context.partition_key
+    if value is None:
+        raise RuntimeError('Depth20 assets require a minute partition key.')
 
     parsed = datetime.fromisoformat(value)
     if parsed.tzinfo is None:
@@ -100,9 +107,9 @@ def _count_minute_rows(
 
 
 @asset(
+    partitions_def=depth20_minute_partitions,
     group_name='binance_spot_depth20_data',
     deps=[create_binance_spot_depth20_snapshots_table_origo],
-    config_schema={MINUTE_START_CONFIG_KEY: str},
     description='Syncs the last completed minute of Binance spot depth20 snapshots from the history API',
 )
 def sync_binance_spot_depth20_snapshots_to_origo(

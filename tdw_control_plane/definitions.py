@@ -128,6 +128,7 @@ from .assets.refresh_aligned_1m_exchange_from_binance_futures_origo import (
     refresh_aligned_1m_exchange_from_binance_futures_origo,
 )
 from .assets.sync_binance_spot_depth20_snapshots_to_origo import (
+    depth20_minute_partitions,
     sync_binance_spot_depth20_snapshots_to_origo,
 )
 
@@ -266,6 +267,11 @@ backfill_binance_spot_trades_origo_job = define_asset_job(
     selection=['insert_daily_binance_spot_trades_to_origo'],
 )
 
+_BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION = [
+    'sync_binance_spot_depth20_snapshots_to_origo',
+    'refresh_binance_spot_depth20_1m_origo',
+]
+
 refresh_binance_futures_data_source_job = define_asset_job(
     name="refresh_binance_futures_data_source_job",
     selection=[
@@ -276,18 +282,12 @@ refresh_binance_futures_data_source_job = define_asset_job(
 
 refresh_binance_spot_depth20_data_source_job = define_asset_job(
     name='refresh_binance_spot_depth20_data_source_job',
-    selection=[
-        'sync_binance_spot_depth20_snapshots_to_origo',
-        'refresh_binance_spot_depth20_1m_origo',
-    ],
+    selection=_BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION,
 )
 
 backfill_binance_spot_depth20_data_source_job = define_asset_job(
     name='backfill_binance_spot_depth20_data_source_job',
-    selection=[
-        'sync_binance_spot_depth20_snapshots_to_origo',
-        'refresh_binance_spot_depth20_1m_origo',
-    ],
+    selection=_BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION,
 )
 
 insert_daily_binance_trades_tdw_job = define_asset_job(
@@ -504,20 +504,6 @@ def _last_completed_minute(scheduled_time: datetime | None) -> datetime:
     )
 
 
-def _binance_spot_depth20_run_config(minute_start: datetime) -> dict[str, object]:
-    minute_start_iso = minute_start.isoformat()
-    return {
-        'ops': {
-            'sync_binance_spot_depth20_snapshots_to_origo': {
-                'config': {'minute_start': minute_start_iso}
-            },
-            'refresh_binance_spot_depth20_1m_origo': {
-                'config': {'minute_start': minute_start_iso}
-            },
-        }
-    }
-
-
 daily_binance_spot_pipeline_schedule = build_schedule_from_partitioned_job(
     refresh_binance_spot_data_source_job,
     name='daily_binance_spot_pipeline_schedule',
@@ -540,11 +526,17 @@ daily_binance_futures_pipeline_schedule = build_schedule_from_partitioned_job(
     execution_timezone='UTC',
     default_status=DefaultScheduleStatus.RUNNING,
 )
-def binance_spot_depth20_1m_schedule(context: ScheduleEvaluationContext) -> RunRequest:
+def binance_spot_depth20_1m_schedule(context: ScheduleEvaluationContext) -> RunRequest | SkipReason:
     minute_start = _last_completed_minute(context.scheduled_execution_time)
+    partition_key = depth20_minute_partitions.get_partition_key_for_timestamp(
+        minute_start.timestamp()
+    )
+    if not depth20_minute_partitions.has_partition_key(partition_key):
+        return SkipReason(f'Depth20 partition {partition_key} is before the partition start.')
+
     return RunRequest(
-        run_key=f'binance_spot_depth20::{minute_start.isoformat()}',
-        run_config=_binance_spot_depth20_run_config(minute_start),
+        partition_key=partition_key,
+        run_key=f'binance_spot_depth20::{partition_key}',
     )
 
 
