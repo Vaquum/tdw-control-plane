@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 import pytest
-from dagster import DefaultScheduleStatus
+from dagster import DagsterInstance, DefaultScheduleStatus, materialize
 
 from .helpers import ORIGO_DATABASE
 
@@ -196,6 +196,62 @@ def test_same_partition_rerun_is_idempotent_for_dollar_klines(
     assert len(second_rows) == 3
 
 
+def test_dollar_kline_refresh_fails_before_replacing_when_raw_partition_is_absent(
+    query_origo: Callable[[str], list[tuple[object, ...]]],
+    origo_assets: dict[str, object],
+) -> None:
+    instance = DagsterInstance.ephemeral()
+    first = materialize(
+        [
+            origo_assets['create_origo_database'],
+            origo_assets['create_binance_daily_spot_trades_table_origo'],
+            origo_assets['create_binance_spot_dollar_klines_table_origo'],
+            origo_assets['insert_daily_binance_spot_trades_to_origo'],
+            origo_assets['refresh_binance_spot_dollar_klines_origo'],
+        ],
+        instance=instance,
+        partition_key='2024-01-01',
+    )
+    before_rows = query_origo(
+        f"""
+        SELECT count()
+        FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_KLINES_TABLE_NAME']}
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
+        """
+    )
+    query_origo(
+        f"""
+        ALTER TABLE {ORIGO_DATABASE}.{origo_assets['RAW_TABLE_NAME']}
+        DELETE WHERE toDate(datetime) = toDate('2024-01-01')
+        SETTINGS mutations_sync = 2
+        """
+    )
+
+    result = materialize(
+        [
+            origo_assets['create_origo_database'],
+            origo_assets['create_binance_daily_spot_trades_table_origo'],
+            origo_assets['create_binance_spot_dollar_klines_table_origo'],
+            origo_assets['refresh_binance_spot_dollar_klines_origo'],
+        ],
+        instance=instance,
+        partition_key='2024-01-01',
+        raise_on_error=False,
+    )
+    after_rows = query_origo(
+        f"""
+        SELECT count()
+        FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_KLINES_TABLE_NAME']}
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
+        """
+    )
+
+    assert first.success
+    assert before_rows[0][0] > 0
+    assert not result.success
+    assert before_rows == after_rows
+
+
 def test_dollar_kline_assets_job_and_schedule_are_registered(
     origo_definitions_module: object,
     origo_assets: dict[str, object],
@@ -231,7 +287,7 @@ def test_dollar_kline_assets_job_and_schedule_are_registered(
     }
 
 
-def test_dollar_kline_backfill_job_matches_daily_time_bar_partition_pattern(
+def test_dollar_kline_backfill_job_is_downstream_only(
     origo_definitions_module: object,
 ) -> None:
     backfill_job = origo_definitions_module.defs.get_job_def(
@@ -239,10 +295,7 @@ def test_dollar_kline_backfill_job_matches_daily_time_bar_partition_pattern(
     )
     node_names = set(backfill_job.graph.node_dict.keys())
 
-    assert node_names == {
-        'insert_daily_binance_spot_trades_to_origo',
-        'refresh_binance_spot_dollar_klines_origo',
-    }
+    assert node_names == {'refresh_binance_spot_dollar_klines_origo'}
     assert backfill_job.partitions_def is not None
     assert '2024-01-01' in backfill_job.partitions_def.get_partition_keys(
         current_time=datetime(2024, 1, 3)

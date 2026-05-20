@@ -1,17 +1,21 @@
 from datetime import UTC, datetime, timedelta
 
-from clickhouse_driver import Client as ClickhouseClient
-from dagster import AssetExecutionContext, asset
+from dagster import AssetExecutionContext, AssetRecordsFilter, asset
 
 from .create_binance_spot_dollar_klines_table_origo import (
     DOLLAR_KLINES_TABLE_NAME,
     create_binance_spot_dollar_klines_table_origo,
 )
-from .create_binance_trades_table_origo import RAW_TABLE_NAME
-from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_client
+from .create_binance_trades_table_origo import LEDGER_TABLE_NAME, RAW_TABLE_NAME
+from .create_origo_database import (
+    ClickHouseClientProtocol,
+    _get_clickhouse_settings,
+    _make_clickhouse_client,
+)
 from .daily_trades_to_origo import daily_partitions, insert_daily_binance_spot_trades_to_origo
 
 DOLLAR_KLINE_SIZE = 100_000.0
+RAW_TRADES_ASSET_KEY = insert_daily_binance_spot_trades_to_origo.key
 
 
 def _partition_date_from_context(context: AssetExecutionContext) -> str:
@@ -23,8 +27,17 @@ def _partition_date_from_context(context: AssetExecutionContext) -> str:
     return target_date.strftime('%Y-%m-%d')
 
 
+def _partition_datetime_bounds(partition_date: str) -> tuple[str, str]:
+    start_datetime = datetime.strptime(partition_date, '%Y-%m-%d')
+    end_datetime = start_datetime + timedelta(days=1)
+    return (
+        start_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+        end_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+    )
+
+
 def _delete_partition_rows(
-    client: ClickhouseClient,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> None:
@@ -38,7 +51,7 @@ def _delete_partition_rows(
 
 
 def _count_partition_rows(
-    client: ClickhouseClient,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> int:
@@ -52,11 +65,97 @@ def _count_partition_rows(
     return int(result[0][0])
 
 
-def _insert_partition_rows(
-    client: ClickhouseClient,
+def _count_raw_partition_rows(
+    client: ClickHouseClientProtocol,
+    database: str,
+    partition_date: str,
+) -> int:
+    start_datetime, end_datetime = _partition_datetime_bounds(partition_date)
+    result = client.execute(
+        f"""
+        SELECT count()
+        FROM {database}.{RAW_TABLE_NAME}
+        WHERE datetime >= toDateTime64('{start_datetime}', 6)
+          AND datetime < toDateTime64('{end_datetime}', 6)
+        """
+    )
+    return int(result[0][0])
+
+
+def _raw_ledger_inserted_row_count(
+    client: ClickHouseClientProtocol,
+    database: str,
+    partition_date: str,
+) -> int | None:
+    result = client.execute(
+        f"""
+        SELECT inserted_row_count
+        FROM {database}.{LEDGER_TABLE_NAME}
+        WHERE source_date = toDate('{partition_date}')
+          AND source_file = 'BTCUSDT-trades-{partition_date}.zip'
+          AND status = 'success'
+        ORDER BY loaded_at DESC
+        LIMIT 1
+        """
+    )
+    if len(result) == 0:
+        return None
+    return int(result[0][0])
+
+
+def _raw_partition_was_materialized(
+    context: AssetExecutionContext,
+    partition_date: str,
+) -> bool:
+    records = context.instance.fetch_materializations(
+        AssetRecordsFilter(
+            asset_key=RAW_TRADES_ASSET_KEY,
+            asset_partitions=[partition_date],
+        ),
+        limit=1,
+    )
+    return len(records.records) == 1
+
+
+def _ensure_raw_partition_ready(
+    context: AssetExecutionContext,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> None:
+    if not _raw_partition_was_materialized(context, partition_date):
+        raise RuntimeError(
+            f'Raw Binance spot trades have no Dagster materialization for {partition_date}. '
+            f'Run insert_daily_binance_spot_trades_to_origo for that partition first.'
+        )
+
+    raw_count = _count_raw_partition_rows(client, database, partition_date)
+    if raw_count == 0:
+        raise RuntimeError(
+            f'Raw Binance spot trades are missing for {partition_date}. '
+            f'Run insert_daily_binance_spot_trades_to_origo for that partition first.'
+        )
+
+    ledger_count = _raw_ledger_inserted_row_count(client, database, partition_date)
+    if ledger_count is None:
+        raise RuntimeError(
+            f'Raw Binance spot trades ingestion ledger is missing for {partition_date}. '
+            f'Run insert_daily_binance_spot_trades_to_origo for that partition first.'
+        )
+
+    if raw_count != ledger_count:
+        raise RuntimeError(
+            f'Raw Binance spot trades row count mismatch for {partition_date}: '
+            f'raw={raw_count}, ledger={ledger_count}.'
+        )
+
+
+def _insert_partition_rows(
+    client: ClickHouseClientProtocol,
+    database: str,
+    partition_date: str,
+) -> None:
+    start_datetime, end_datetime = _partition_datetime_bounds(partition_date)
     client.execute(
         f"""
         INSERT INTO {database}.{DOLLAR_KLINES_TABLE_NAME}
@@ -97,7 +196,8 @@ def _insert_partition_rows(
                         0.0
                     ) AS running_quote_before
                 FROM {database}.{RAW_TABLE_NAME}
-                WHERE toDate(datetime) = toDate('{partition_date}')
+                WHERE datetime >= toDateTime64('{start_datetime}', 6)
+                  AND datetime < toDateTime64('{end_datetime}', 6)
             )
         )
         GROUP BY dollar_bar_id
@@ -127,6 +227,8 @@ def refresh_binance_spot_dollar_klines_origo(
     client = _make_clickhouse_client(settings)
 
     try:
+        _ensure_raw_partition_ready(context, client, settings.database, partition_date)
+
         existing_count = _count_partition_rows(client, settings.database, partition_date)
         if existing_count > 0:
             context.log.info(

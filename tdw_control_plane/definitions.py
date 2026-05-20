@@ -258,10 +258,7 @@ refresh_binance_spot_data_source_job = define_asset_job(
 
 backfill_binance_spot_dollar_klines_origo_job = define_asset_job(
     name='backfill_binance_spot_dollar_klines_origo_job',
-    selection=[
-        'insert_daily_binance_spot_trades_to_origo',
-        'refresh_binance_spot_dollar_klines_origo',
-    ],
+    selection=['refresh_binance_spot_dollar_klines_origo'],
 )
 
 refresh_binance_futures_data_source_job = define_asset_job(
