@@ -82,6 +82,9 @@ from .assets.create_binance_spot_klines_table_origo import (
 from .assets.create_binance_spot_dollar_klines_table_origo import (
     create_binance_spot_dollar_klines_table_origo,
 )
+from .assets.create_binance_spot_volume_klines_table_origo import (
+    create_binance_spot_volume_klines_table_origo,
+)
 from .assets.create_binance_futures_klines_table_origo import (
     create_binance_futures_klines_table_origo,
 )
@@ -94,6 +97,9 @@ from .assets.create_binance_spot_depth20_snapshots_table_origo import (
 from .assets.refresh_binance_spot_klines_origo import refresh_binance_spot_klines_origo
 from .assets.refresh_binance_spot_dollar_klines_origo import (
     refresh_binance_spot_dollar_klines_origo,
+)
+from .assets.refresh_binance_spot_volume_klines_origo import (
+    refresh_binance_spot_volume_klines_origo,
 )
 from .assets.refresh_binance_futures_klines_origo import refresh_binance_futures_klines_origo
 from .assets.refresh_binance_spot_depth20_1m_origo import (
@@ -169,6 +175,11 @@ create_binance_spot_dollar_klines_table_origo_job = define_asset_job(
     selection=["create_binance_spot_dollar_klines_table_origo"]
 )
 
+create_binance_spot_volume_klines_table_origo_job = define_asset_job(
+    name="create_binance_spot_volume_klines_table_origo_job",
+    selection=["create_binance_spot_volume_klines_table_origo"]
+)
+
 create_binance_futures_klines_table_origo_job = define_asset_job(
     name="create_binance_futures_klines_table_origo_job",
     selection=["create_binance_futures_klines_table_origo"]
@@ -217,6 +228,7 @@ refresh_binance_spot_data_source_job = define_asset_job(
         "insert_daily_binance_spot_trades_to_origo",
         "refresh_binance_spot_klines_origo",
         "refresh_binance_spot_dollar_klines_origo",
+        "refresh_binance_spot_volume_klines_origo",
         "refresh_aligned_1m_exchange_from_binance_spot_origo",
     ])
 
@@ -693,6 +705,7 @@ defs = Definitions(
             create_binance_daily_futures_trades_table_origo,
             create_binance_spot_klines_table_origo,
             create_binance_spot_dollar_klines_table_origo,
+            create_binance_spot_volume_klines_table_origo,
             create_binance_futures_klines_table_origo,
             create_binance_spot_depth20_snapshots_table_origo,
             create_binance_spot_depth20_1m_table_origo,
@@ -703,6 +716,7 @@ defs = Definitions(
             insert_daily_binance_futures_trades_to_origo,
             refresh_binance_spot_klines_origo,
             refresh_binance_spot_dollar_klines_origo,
+            refresh_binance_spot_volume_klines_origo,
             refresh_binance_futures_klines_origo,
             sync_binance_spot_depth20_snapshots_to_origo,
             refresh_binance_spot_depth20_1m_origo,
@@ -755,6 +769,7 @@ defs = Definitions(
           create_binance_daily_futures_trades_table_origo_job,
           create_binance_spot_klines_table_origo_job,
           create_binance_spot_dollar_klines_table_origo_job,
+          create_binance_spot_volume_klines_table_origo_job,
           create_binance_futures_klines_table_origo_job,
           create_binance_spot_depth20_snapshots_table_origo_job,
           create_binance_spot_depth20_1m_table_origo_job,

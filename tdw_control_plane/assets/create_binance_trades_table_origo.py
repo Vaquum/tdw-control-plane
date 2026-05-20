@@ -1,18 +1,26 @@
-from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
 
 from .create_origo_database import (
+    ClickHouseClientProtocol,
     ClickHouseSettings,
-    _get_clickhouse_settings,
-    _make_clickhouse_client,
     create_origo_database,
+    get_clickhouse_settings,
+    make_clickhouse_client,
 )
+
+__all__ = [
+    'LEDGER_TABLE_NAME',
+    'RAW_TABLE_NAME',
+    'create_binance_daily_spot_trades_table_origo',
+    'database_exists',
+    'table_exists',
+]
 
 RAW_TABLE_NAME = 'binance_daily_spot_trades'
 LEDGER_TABLE_NAME = 'binance_daily_spot_trades_ingestion'
 
 
-def _database_exists(client: ClickhouseClient, database: str) -> bool:
+def database_exists(client: ClickHouseClientProtocol, database: str) -> bool:
     result = client.execute(
         f"""
         SELECT count()
@@ -23,7 +31,11 @@ def _database_exists(client: ClickhouseClient, database: str) -> bool:
     return bool(result[0][0])
 
 
-def _table_exists(client: ClickhouseClient, settings: ClickHouseSettings, table_name: str) -> bool:
+def table_exists(
+    client: ClickHouseClientProtocol,
+    settings: ClickHouseSettings,
+    table_name: str,
+) -> bool:
     result = client.execute(
         f"""
         SELECT count()
@@ -35,7 +47,11 @@ def _table_exists(client: ClickhouseClient, settings: ClickHouseSettings, table_
     return bool(result[0][0])
 
 
-def _create_raw_table(client: ClickhouseClient, settings: ClickHouseSettings) -> None:
+_database_exists = database_exists
+_table_exists = table_exists
+
+
+def _create_raw_table(client: ClickHouseClientProtocol, settings: ClickHouseSettings) -> None:
     client.execute(
         f"""
         CREATE TABLE IF NOT EXISTS {settings.database}.{RAW_TABLE_NAME} (
@@ -55,7 +71,10 @@ def _create_raw_table(client: ClickhouseClient, settings: ClickHouseSettings) ->
     )
 
 
-def _create_ingestion_ledger(client: ClickhouseClient, settings: ClickHouseSettings) -> None:
+def _create_ingestion_ledger(
+    client: ClickHouseClientProtocol,
+    settings: ClickHouseSettings,
+) -> None:
     client.execute(
         f"""
         CREATE TABLE IF NOT EXISTS {settings.database}.{LEDGER_TABLE_NAME} (
@@ -85,17 +104,17 @@ def _create_ingestion_ledger(client: ClickhouseClient, settings: ClickHouseSetti
 def create_binance_daily_spot_trades_table_origo(
     context: AssetExecutionContext,
 ) -> dict[str, object]:
-    settings = _get_clickhouse_settings()
-    client = _make_clickhouse_client(settings)
+    settings = get_clickhouse_settings()
+    client = make_clickhouse_client(settings)
 
     try:
-        if not _database_exists(client, settings.database):
+        if not database_exists(client, settings.database):
             raise RuntimeError(
                 f'Database {settings.database} does not exist. Run create_origo_database first.'
             )
 
-        raw_table_existed = _table_exists(client, settings, RAW_TABLE_NAME)
-        ledger_table_existed = _table_exists(client, settings, LEDGER_TABLE_NAME)
+        raw_table_existed = table_exists(client, settings, RAW_TABLE_NAME)
+        ledger_table_existed = table_exists(client, settings, LEDGER_TABLE_NAME)
 
         _create_raw_table(client, settings)
         _create_ingestion_ledger(client, settings)

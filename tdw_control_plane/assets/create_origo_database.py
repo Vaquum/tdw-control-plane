@@ -1,8 +1,18 @@
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
+from importlib import import_module
+from typing import Protocol
 
-from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
+
+__all__ = [
+    'ClickHouseClientProtocol',
+    'ClickHouseSettings',
+    'create_origo_database',
+    'get_clickhouse_settings',
+    'make_clickhouse_client',
+]
 
 DEFAULT_CLICKHOUSE_HOST = 'clickhouse'
 DEFAULT_CLICKHOUSE_PORT = 9000
@@ -16,6 +26,19 @@ class ClickHouseSettings:
     user: str
     password: str
     database: str
+
+
+class ClickHouseClientProtocol(Protocol):
+    def execute(
+        self,
+        query: str,
+        params: object | None = None,
+        settings: Mapping[str, object] | None = None,
+    ) -> list[tuple[object, ...]]:
+        raise NotImplementedError
+
+    def disconnect(self) -> None:
+        raise NotImplementedError
 
 
 def _require_env(name: str) -> str:
@@ -33,7 +56,7 @@ def _get_clickhouse_port() -> int:
         raise RuntimeError('CLICKHOUSE_PORT environment variable must be an integer.') from exc
 
 
-def _get_clickhouse_settings() -> ClickHouseSettings:
+def get_clickhouse_settings() -> ClickHouseSettings:
     return ClickHouseSettings(
         host=os.environ.get('CLICKHOUSE_HOST', DEFAULT_CLICKHOUSE_HOST),
         port=_get_clickhouse_port(),
@@ -43,8 +66,9 @@ def _get_clickhouse_settings() -> ClickHouseSettings:
     )
 
 
-def _make_clickhouse_client(settings: ClickHouseSettings) -> ClickhouseClient:
-    return ClickhouseClient(
+def make_clickhouse_client(settings: ClickHouseSettings) -> ClickHouseClientProtocol:
+    client_factory = getattr(import_module('clickhouse_driver'), 'Client')
+    return client_factory(
         host=settings.host,
         port=settings.port,
         user=settings.user,
@@ -52,13 +76,17 @@ def _make_clickhouse_client(settings: ClickHouseSettings) -> ClickhouseClient:
     )
 
 
+_get_clickhouse_settings = get_clickhouse_settings
+_make_clickhouse_client = make_clickhouse_client
+
+
 @asset(
     group_name='origo_setup',
     description='Creates the origo database if it does not already exist',
 )
 def create_origo_database(context: AssetExecutionContext) -> dict[str, object]:
-    settings = _get_clickhouse_settings()
-    client = _make_clickhouse_client(settings)
+    settings = get_clickhouse_settings()
+    client = make_clickhouse_client(settings)
 
     try:
         result = client.execute(f"SHOW DATABASES LIKE '{settings.database}'")
