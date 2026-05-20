@@ -51,7 +51,7 @@ def _existing_snapshot_minutes(client: ClickHouseClient, database: str) -> list[
         client.execute(
             f"""
             SELECT DISTINCT toStartOfMinute(datetime) AS minute
-            FROM {database}.{SNAPSHOTS_TABLE_NAME} FINAL
+            FROM {database}.{SNAPSHOTS_TABLE_NAME}
             ORDER BY minute
             """
         )
@@ -63,7 +63,7 @@ def _existing_projection_minutes(client: ClickHouseClient, database: str) -> lis
         client.execute(
             f"""
             SELECT DISTINCT datetime AS minute
-            FROM {database}.{DEPTH20_1M_TABLE_NAME} FINAL
+            FROM {database}.{DEPTH20_1M_TABLE_NAME}
             ORDER BY minute
             """
         )
