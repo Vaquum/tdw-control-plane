@@ -101,6 +101,7 @@ DOLLAR_KLINE_CASES = [
 def test_dollar_kline_query_uses_arrow_parameters_and_configured_database(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
     publish_helper_module = importlib.import_module(
         'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
     )
@@ -177,7 +178,10 @@ def test_dollar_kline_query_uses_arrow_parameters_and_configured_database(
     }
 
 
-def test_dollar_kline_query_rejects_unsafe_sql_inputs() -> None:
+def test_dollar_kline_query_rejects_unsafe_sql_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
     publish_helper_module = importlib.import_module(
         'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
     )

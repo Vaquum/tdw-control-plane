@@ -132,16 +132,20 @@ def _validate_clickhouse_identifier(value: str, field_name: str) -> str:
 
 
 def _normalize_datetime_literal(value: str, field_name: str) -> str:
+    last_error: ValueError | None = None
     for fmt in _SUPPORTED_DATETIME_FORMATS:
         try:
             parsed = datetime.strptime(value, fmt)
             return parsed.strftime("%Y-%m-%d %H:%M:%S")
-        except ValueError:
-            continue
+        except ValueError as exc:
+            last_error = exc
 
-    raise ValueError(
+    message = (
         f"{field_name} must match one of: YYYY-MM-DD, YYYY-MM-DD HH:MM:SS, YYYY-MM-DDTHH:MM:SS."
     )
+    if last_error is None:
+        raise ValueError(message)
+    raise ValueError(message) from last_error
 
 
 def _get_binance_spot_dollar_klines(
