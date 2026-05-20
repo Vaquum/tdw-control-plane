@@ -67,10 +67,11 @@ def _wait_for_clickhouse(host: str, port: int, user: str, password: str) -> None
     raise RuntimeError(f'ClickHouse container did not become ready: {last_error}')
 
 
-def _clickhouse_env(native_port: int, password: str) -> dict[str, str]:
+def _clickhouse_env(native_port: int, http_port: int, password: str) -> dict[str, str]:
     return {
         'CLICKHOUSE_HOST': '127.0.0.1',
         'CLICKHOUSE_PORT': str(native_port),
+        'CLICKHOUSE_HTTP_PORT': str(http_port),
         'CLICKHOUSE_USER': 'default',
         'CLICKHOUSE_PASSWORD': password,
         'CLICKHOUSE_DATABASE': ORIGO_DATABASE,
@@ -120,8 +121,9 @@ def clickhouse_settings() -> dict[str, str]:
 
     container_name = f'tdw-origo-tests-{uuid4().hex[:12]}'
     native_port = _free_port()
+    http_port = _free_port()
     password = 'test-password'
-    settings = _clickhouse_env(native_port, password)
+    settings = _clickhouse_env(native_port, http_port, password)
 
     subprocess.run(
         [
@@ -137,6 +139,8 @@ def clickhouse_settings() -> dict[str, str]:
             '/var/log/clickhouse-server:size=64m',
             '--publish',
             f'127.0.0.1:{native_port}:9000',
+            '--publish',
+            f'127.0.0.1:{http_port}:8123',
             '--env',
             'CLICKHOUSE_USER=default',
             '--env',
@@ -227,6 +231,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     create_binance_spot_dollar_klines_table_origo_module = _reload_module(
         'tdw_control_plane.assets.create_binance_spot_dollar_klines_table_origo'
     )
+    create_binance_spot_dollar_imbalance_klines_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_dollar_imbalance_klines_table_origo'
+    )
     create_binance_spot_volume_klines_table_origo_module = _reload_module(
         'tdw_control_plane.assets.create_binance_spot_volume_klines_table_origo'
     )
@@ -241,6 +248,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     )
     refresh_binance_spot_dollar_klines_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_binance_spot_dollar_klines_origo'
+    )
+    refresh_binance_spot_dollar_imbalance_klines_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_dollar_imbalance_klines_origo'
     )
     refresh_binance_spot_volume_klines_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_binance_spot_volume_klines_origo'
@@ -297,6 +307,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         'create_binance_spot_dollar_klines_table_origo': (
             create_binance_spot_dollar_klines_table_origo_module.create_binance_spot_dollar_klines_table_origo
         ),
+        'create_binance_spot_dollar_imbalance_klines_table_origo': (
+            create_binance_spot_dollar_imbalance_klines_table_origo_module.create_binance_spot_dollar_imbalance_klines_table_origo
+        ),
         'create_binance_spot_volume_klines_table_origo': (
             create_binance_spot_volume_klines_table_origo_module.create_binance_spot_volume_klines_table_origo
         ),
@@ -312,6 +325,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         'refresh_binance_spot_dollar_klines_origo': (
             refresh_binance_spot_dollar_klines_origo_module.refresh_binance_spot_dollar_klines_origo
         ),
+        'refresh_binance_spot_dollar_imbalance_klines_origo': (
+            refresh_binance_spot_dollar_imbalance_klines_origo_module.refresh_binance_spot_dollar_imbalance_klines_origo
+        ),
         'refresh_binance_spot_volume_klines_origo': (
             refresh_binance_spot_volume_klines_origo_module.refresh_binance_spot_volume_klines_origo
         ),
@@ -325,6 +341,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         'DOLLAR_KLINES_TABLE_NAME': (
             create_binance_spot_dollar_klines_table_origo_module.DOLLAR_KLINES_TABLE_NAME
         ),
+        'DOLLAR_IMBALANCE_KLINES_TABLE_NAME': (
+            create_binance_spot_dollar_imbalance_klines_table_origo_module.DOLLAR_IMBALANCE_KLINES_TABLE_NAME
+        ),
         'VOLUME_KLINES_TABLE_NAME': (
             create_binance_spot_volume_klines_table_origo_module.VOLUME_KLINES_TABLE_NAME
         ),
@@ -333,6 +352,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         ),
         'refresh_binance_spot_dollar_klines_origo_module': (
             refresh_binance_spot_dollar_klines_origo_module
+        ),
+        'refresh_binance_spot_dollar_imbalance_klines_origo_module': (
+            refresh_binance_spot_dollar_imbalance_klines_origo_module
         ),
         'refresh_binance_spot_volume_klines_origo_module': (
             refresh_binance_spot_volume_klines_origo_module
@@ -430,6 +452,25 @@ def materialize_binance_spot_dollar_klines_assets(
                 origo_assets['create_binance_spot_dollar_klines_table_origo'],
                 origo_assets['insert_daily_binance_spot_trades_to_origo'],
                 origo_assets['refresh_binance_spot_dollar_klines_origo'],
+            ],
+            partition_key=partition_key,
+        )
+
+    return _run
+
+
+@pytest.fixture()
+def materialize_binance_spot_dollar_imbalance_klines_assets(
+    origo_assets: dict[str, object],
+) -> object:
+    def _run(*, partition_key: str | None = None) -> object:
+        return materialize(
+            [
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_daily_spot_trades_table_origo'],
+                origo_assets['create_binance_spot_dollar_imbalance_klines_table_origo'],
+                origo_assets['insert_daily_binance_spot_trades_to_origo'],
+                origo_assets['refresh_binance_spot_dollar_imbalance_klines_origo'],
             ],
             partition_key=partition_key,
         )

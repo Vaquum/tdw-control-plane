@@ -1,3 +1,6 @@
+# v1.13.0 on May 20, 2026
+- Add Binance spot dollar imbalance klines on Origo daily spot trades.
+
 # v1.12.0 on May 20, 2026
 - Add Binance spot tick klines on Origo daily spot trades.
 
