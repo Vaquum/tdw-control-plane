@@ -233,7 +233,7 @@ def _get_binance_spot_dollar_klines(
     finally:
         client.close()
 
-    data = pl.from_arrow(arrow_table).select(DOLLAR_KLINE_EXPORT_COLUMNS)
+    data = cast(pl.DataFrame, pl.from_arrow(arrow_table)).select(DOLLAR_KLINE_EXPORT_COLUMNS)
     if data.height == 0:
         return data
 
