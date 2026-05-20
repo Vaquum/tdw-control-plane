@@ -256,6 +256,14 @@ refresh_binance_spot_data_source_job = define_asset_job(
         "refresh_aligned_1m_exchange_from_binance_spot_origo",
     ])
 
+backfill_binance_spot_dollar_klines_origo_job = define_asset_job(
+    name='backfill_binance_spot_dollar_klines_origo_job',
+    selection=[
+        'insert_daily_binance_spot_trades_to_origo',
+        'refresh_binance_spot_dollar_klines_origo',
+    ],
+)
+
 refresh_binance_futures_data_source_job = define_asset_job(
     name="refresh_binance_futures_data_source_job",
     selection=[
@@ -807,6 +815,7 @@ defs = Definitions(
           create_binance_trades_complete_view_job,
           insert_monthly_binance_trades_job,
           refresh_binance_spot_data_source_job,
+          backfill_binance_spot_dollar_klines_origo_job,
           refresh_binance_futures_data_source_job,
           refresh_binance_spot_depth20_data_source_job,
           insert_daily_binance_trades_tdw_job,
