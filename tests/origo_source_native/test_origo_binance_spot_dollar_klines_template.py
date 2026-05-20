@@ -247,6 +247,7 @@ def test_dollar_kline_refresh_fails_before_replacing_when_raw_partition_is_absen
     )
 
     assert first.success
+    assert before_rows[0][0] > 0
     assert not result.success
     assert before_rows == after_rows
 

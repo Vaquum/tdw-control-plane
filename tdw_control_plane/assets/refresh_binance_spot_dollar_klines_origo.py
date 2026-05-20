@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta
 
-from dagster import AssetExecutionContext, AssetKey, AssetRecordsFilter, asset
+from dagster import AssetExecutionContext, AssetRecordsFilter, asset
 
 from .create_binance_spot_dollar_klines_table_origo import (
     DOLLAR_KLINES_TABLE_NAME,
@@ -15,7 +15,7 @@ from .create_origo_database import (
 from .daily_trades_to_origo import daily_partitions, insert_daily_binance_spot_trades_to_origo
 
 DOLLAR_KLINE_SIZE = 100_000.0
-RAW_TRADES_ASSET_KEY = AssetKey('insert_daily_binance_spot_trades_to_origo')
+RAW_TRADES_ASSET_KEY = insert_daily_binance_spot_trades_to_origo.key
 
 
 def _partition_date_from_context(context: AssetExecutionContext) -> str:
@@ -25,6 +25,15 @@ def _partition_date_from_context(context: AssetExecutionContext) -> str:
 
     target_date = datetime.now(UTC) - timedelta(days=1)
     return target_date.strftime('%Y-%m-%d')
+
+
+def _partition_datetime_bounds(partition_date: str) -> tuple[str, str]:
+    start_datetime = datetime.strptime(partition_date, '%Y-%m-%d')
+    end_datetime = start_datetime + timedelta(days=1)
+    return (
+        start_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+        end_datetime.strftime('%Y-%m-%d %H:%M:%S'),
+    )
 
 
 def _delete_partition_rows(
@@ -61,11 +70,13 @@ def _count_raw_partition_rows(
     database: str,
     partition_date: str,
 ) -> int:
+    start_datetime, end_datetime = _partition_datetime_bounds(partition_date)
     result = client.execute(
         f"""
         SELECT count()
         FROM {database}.{RAW_TABLE_NAME}
-        WHERE toDate(datetime) = toDate('{partition_date}')
+        WHERE datetime >= toDateTime64('{start_datetime}', 6)
+          AND datetime < toDateTime64('{end_datetime}', 6)
         """
     )
     return int(result[0][0])
@@ -144,6 +155,7 @@ def _insert_partition_rows(
     database: str,
     partition_date: str,
 ) -> None:
+    start_datetime, end_datetime = _partition_datetime_bounds(partition_date)
     client.execute(
         f"""
         INSERT INTO {database}.{DOLLAR_KLINES_TABLE_NAME}
@@ -184,7 +196,8 @@ def _insert_partition_rows(
                         0.0
                     ) AS running_quote_before
                 FROM {database}.{RAW_TABLE_NAME}
-                WHERE toDate(datetime) = toDate('{partition_date}')
+                WHERE datetime >= toDateTime64('{start_datetime}', 6)
+                  AND datetime < toDateTime64('{end_datetime}', 6)
             )
         )
         GROUP BY dollar_bar_id
