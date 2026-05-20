@@ -1,6 +1,12 @@
 # v1.14.0 on May 20, 2026
 - Add Hugging Face publishers for BTCUSDT 100k, 2M, 4M, 8M, 16M, and 32M dollar spot kline snapshots from Origo dollar klines.
 
+# v1.13.4 on May 20, 2026
+- Add a manual Origo depth20 partition-state reconciliation job for existing ClickHouse rows.
+
+# v1.13.3 on May 20, 2026
+- Add manual Origo backfill jobs for Binance spot raw trades and depth20 snapshots plus 1m projection.
+
 # v1.13.2 on May 20, 2026
 - Decouple the Binance spot dollar klines backfill job from raw-trades ingestion and fail the dollar refresh when raw trades are absent.
 

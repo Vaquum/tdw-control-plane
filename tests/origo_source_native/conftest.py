@@ -282,6 +282,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     refresh_binance_spot_depth20_1m_origo_module = _reload_module(
         'tdw_control_plane.assets.refresh_binance_spot_depth20_1m_origo'
     )
+    reconcile_binance_spot_depth20_partition_state_origo_module = _reload_module(
+        'tdw_control_plane.assets.reconcile_binance_spot_depth20_partition_state_origo'
+    )
 
     return {
         'create_origo_database': create_origo_database_module.create_origo_database,
@@ -392,6 +395,9 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         ),
         'refresh_binance_spot_depth20_1m_origo': (
             refresh_binance_spot_depth20_1m_origo_module.refresh_binance_spot_depth20_1m_origo
+        ),
+        'reconcile_binance_spot_depth20_partition_state_origo': (
+            reconcile_binance_spot_depth20_partition_state_origo_module.reconcile_binance_spot_depth20_partition_state_origo
         ),
         'DEPTH20_SNAPSHOTS_TABLE_NAME': (
             create_binance_spot_depth20_snapshots_table_origo_module.SNAPSHOTS_TABLE_NAME
