@@ -1,7 +1,12 @@
-from dataclasses import dataclass
+import os
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
-from math import sqrt
+from importlib import import_module
+from typing import Protocol, cast
 
+import numpy as np
+import numpy.typing as npt
+import pyarrow as pa
 from dagster import AssetExecutionContext, asset
 
 from .create_binance_spot_dollar_imbalance_klines_table_origo import (
@@ -11,142 +16,26 @@ from .create_binance_spot_dollar_imbalance_klines_table_origo import (
 from .create_binance_trades_table_origo import RAW_TABLE_NAME
 from .create_origo_database import (
     ClickHouseClientProtocol,
+    ClickHouseSettings,
     get_clickhouse_settings,
     make_clickhouse_client,
 )
 from .daily_trades_to_origo import daily_partitions, insert_daily_binance_spot_trades_to_origo
 
 DOLLAR_IMBALANCE_KLINE_SIZE = 100_000.0
-TRADE_FETCH_BATCH_SIZE = 100_000
-KLINE_INSERT_BATCH_SIZE = 1_000
+DOLLAR_IMBALANCE_BOUNDARY_SEARCH_STEP = 512
+DEFAULT_CLICKHOUSE_HTTP_PORT = 8123
 
 
-@dataclass(frozen=True)
-class _Trade:
-    trade_id: int
-    price: float
-    quantity: float
-    quote_quantity: float
-    is_buyer_maker: int
-    traded_at: datetime
+class _ClickHouseArrowClientProtocol(Protocol):
+    def query_arrow(self, query: str) -> pa.Table:
+        raise NotImplementedError
 
+    def insert_arrow(self, table: str, arrow_table: pa.Table) -> object:
+        raise NotImplementedError
 
-@dataclass
-class _DollarImbalanceBar:
-    dollar_imbalance_bar_id: int
-    start_datetime: datetime
-    end_datetime: datetime
-    open_price: float
-    high_price: float
-    low_price: float
-    close_price: float
-    mean_price: float
-    price_m2: float
-    prices: list[float]
-    volume: float
-    maker_count: float
-    no_of_trades: int
-    open_liquidity: float
-    high_liquidity: float
-    low_liquidity: float
-    close_liquidity: float
-    liquidity_sum: float
-    maker_volume: float
-    maker_liquidity: float
-    taker_buy_liquidity: float
-    taker_sell_liquidity: float
-
-    @classmethod
-    def from_trade(cls, dollar_imbalance_bar_id: int, trade: _Trade) -> '_DollarImbalanceBar':
-        liquidity = trade.price * trade.quantity
-        maker_volume = trade.quantity if trade.is_buyer_maker == 1 else 0.0
-        maker_liquidity = liquidity if trade.is_buyer_maker == 1 else 0.0
-        taker_buy_liquidity = trade.quote_quantity if trade.is_buyer_maker == 0 else 0.0
-        taker_sell_liquidity = trade.quote_quantity if trade.is_buyer_maker == 1 else 0.0
-        return cls(
-            dollar_imbalance_bar_id=dollar_imbalance_bar_id,
-            start_datetime=trade.traded_at,
-            end_datetime=trade.traded_at,
-            open_price=trade.price,
-            high_price=trade.price,
-            low_price=trade.price,
-            close_price=trade.price,
-            mean_price=trade.price,
-            price_m2=0.0,
-            prices=[trade.price],
-            volume=trade.quantity,
-            maker_count=float(trade.is_buyer_maker),
-            no_of_trades=1,
-            open_liquidity=liquidity,
-            high_liquidity=liquidity,
-            low_liquidity=liquidity,
-            close_liquidity=liquidity,
-            liquidity_sum=liquidity,
-            maker_volume=maker_volume,
-            maker_liquidity=maker_liquidity,
-            taker_buy_liquidity=taker_buy_liquidity,
-            taker_sell_liquidity=taker_sell_liquidity,
-        )
-
-    def add_trade(self, trade: _Trade) -> None:
-        liquidity = trade.price * trade.quantity
-        self.end_datetime = trade.traded_at
-        self.high_price = max(self.high_price, trade.price)
-        self.low_price = min(self.low_price, trade.price)
-        self.close_price = trade.price
-
-        self.no_of_trades += 1
-        price_delta = trade.price - self.mean_price
-        self.mean_price += price_delta / self.no_of_trades
-        self.price_m2 += price_delta * (trade.price - self.mean_price)
-        self.prices.append(trade.price)
-
-        self.volume += trade.quantity
-        self.maker_count += trade.is_buyer_maker
-        self.high_liquidity = max(self.high_liquidity, liquidity)
-        self.low_liquidity = min(self.low_liquidity, liquidity)
-        self.close_liquidity = liquidity
-        self.liquidity_sum += liquidity
-
-        if trade.is_buyer_maker == 1:
-            self.maker_volume += trade.quantity
-            self.maker_liquidity += liquidity
-            self.taker_sell_liquidity += trade.quote_quantity
-        else:
-            self.taker_buy_liquidity += trade.quote_quantity
-
-    @property
-    def dollar_imbalance(self) -> float:
-        return self.taker_buy_liquidity - self.taker_sell_liquidity
-
-    def to_insert_row(self) -> tuple[object, ...]:
-        sorted_prices = sorted(self.prices)
-        return (
-            self.start_datetime,
-            self.end_datetime,
-            self.dollar_imbalance_bar_id,
-            self.open_price,
-            self.high_price,
-            self.low_price,
-            self.close_price,
-            self.mean_price,
-            sqrt(self.price_m2 / self.no_of_trades),
-            _quantile_exact(sorted_prices, 0.5),
-            _quantile_exact(sorted_prices, 0.75) - _quantile_exact(sorted_prices, 0.25),
-            self.volume,
-            self.maker_count / self.no_of_trades,
-            self.no_of_trades,
-            self.open_liquidity,
-            self.high_liquidity,
-            self.low_liquidity,
-            self.close_liquidity,
-            self.liquidity_sum,
-            self.maker_volume,
-            self.maker_liquidity,
-            self.taker_buy_liquidity,
-            self.taker_sell_liquidity,
-            self.dollar_imbalance,
-        )
+    def close(self) -> None:
+        raise NotImplementedError
 
 
 def _partition_key_or_none(partition_key: object) -> str | None:
@@ -174,43 +63,27 @@ def _partition_datetime_bounds(partition_date: str) -> tuple[str, str]:
     return _clickhouse_datetime64(partition_start), _clickhouse_datetime64(partition_end)
 
 
-def _quantile_exact(sorted_values: list[float], level: float) -> float:
-    index = int(level * len(sorted_values))
-    if index == len(sorted_values):
-        index -= 1
-    return sorted_values[index]
+def _get_clickhouse_http_port() -> int:
+    value = os.environ.get('CLICKHOUSE_HTTP_PORT', str(DEFAULT_CLICKHOUSE_HTTP_PORT))
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError('CLICKHOUSE_HTTP_PORT environment variable must be an integer.') from exc
 
 
-def _parse_trade_row(row: tuple[object, ...]) -> _Trade:
-    if len(row) != 6:
-        raise TypeError(f'Expected 6 trade columns from ClickHouse, got {len(row)}')
-
-    trade_id, price, quantity, quote_quantity, is_buyer_maker, traded_at = row
-    if not isinstance(trade_id, int):
-        raise TypeError(f'Expected int trade_id from ClickHouse, got {type(trade_id).__name__}')
-    if not isinstance(price, float):
-        raise TypeError(f'Expected float price from ClickHouse, got {type(price).__name__}')
-    if not isinstance(quantity, float):
-        raise TypeError(f'Expected float quantity from ClickHouse, got {type(quantity).__name__}')
-    if not isinstance(quote_quantity, float):
-        raise TypeError(
-            f'Expected float quote_quantity from ClickHouse, got {type(quote_quantity).__name__}'
-        )
-    if not isinstance(is_buyer_maker, int):
-        raise TypeError(
-            'Expected int is_buyer_maker from ClickHouse, '
-            f'got {type(is_buyer_maker).__name__}'
-        )
-    if not isinstance(traded_at, datetime):
-        raise TypeError(f'Expected datetime from ClickHouse, got {type(traded_at).__name__}')
-
-    return _Trade(
-        trade_id=trade_id,
-        price=price,
-        quantity=quantity,
-        quote_quantity=quote_quantity,
-        is_buyer_maker=is_buyer_maker,
-        traded_at=traded_at,
+def _make_clickhouse_arrow_client(
+    settings: ClickHouseSettings,
+) -> _ClickHouseArrowClientProtocol:
+    client_factory = getattr(import_module('clickhouse_connect'), 'get_client')
+    return cast(
+        _ClickHouseArrowClientProtocol,
+        client_factory(
+            host=settings.host,
+            port=_get_clickhouse_http_port(),
+            username=settings.user,
+            password=settings.password,
+            database=settings.database,
+        ),
     )
 
 
@@ -246,27 +119,15 @@ def _count_partition_rows(
     return count_value
 
 
-def _fetch_trade_batch(
-    client: ClickHouseClientProtocol,
+def _query_partition_trades(
+    client: _ClickHouseArrowClientProtocol,
     database: str,
     partition_start: str,
     partition_end: str,
-    last_trade: _Trade | None,
-) -> list[tuple[object, ...]]:
-    cursor_clause = ''
-    if last_trade is not None:
-        cursor_clause = (
-            f"AND (datetime > toDateTime64('{_clickhouse_datetime64(last_trade.traded_at)}', 6) "
-            "OR ("
-            f"datetime = toDateTime64('{_clickhouse_datetime64(last_trade.traded_at)}', 6) "
-            f"AND trade_id > {last_trade.trade_id}"
-            '))'
-        )
-
-    return client.execute(
+) -> pa.Table:
+    return client.query_arrow(
         f"""
         SELECT
-            trade_id,
             price,
             quantity,
             quote_quantity,
@@ -275,81 +136,201 @@ def _fetch_trade_batch(
         FROM {database}.{RAW_TABLE_NAME}
         WHERE datetime >= toDateTime64('{partition_start}', 6)
           AND datetime < toDateTime64('{partition_end}', 6)
-          {cursor_clause}
         ORDER BY datetime, trade_id
-        LIMIT {TRADE_FETCH_BATCH_SIZE}
         """
     )
 
 
-def _insert_kline_rows(
-    client: ClickHouseClientProtocol,
-    database: str,
-    rows: list[tuple[object, ...]],
-) -> None:
-    client.execute(
-        f'INSERT INTO {database}.{DOLLAR_IMBALANCE_KLINES_TABLE_NAME} VALUES',
-        rows,
+def _float64_column(table: pa.Table, column_name: str) -> npt.NDArray[np.float64]:
+    return np.asarray(table.column(column_name), dtype=np.float64)
+
+
+def _uint8_column(table: pa.Table, column_name: str) -> npt.NDArray[np.uint8]:
+    return np.asarray(table.column(column_name), dtype=np.uint8)
+
+
+def _datetime_column(table: pa.Table, column_name: str) -> npt.NDArray[np.datetime64]:
+    return cast(npt.NDArray[np.datetime64], np.asarray(table.column(column_name)))
+
+
+def _bar_boundaries(
+    quote_quantities: npt.NDArray[np.float64],
+    maker_flags: npt.NDArray[np.uint8],
+) -> tuple[npt.NDArray[np.int64], npt.NDArray[np.int64]]:
+    signed_quotes = quote_quantities.copy()
+    signed_quotes[maker_flags == 1] *= -1.0
+    cumulative_quotes = np.cumsum(signed_quotes, out=signed_quotes)
+
+    starts: list[int] = []
+    ends: list[int] = []
+    start_index = 0
+    row_count = len(cumulative_quotes)
+
+    while start_index < row_count:
+        base_quote = cumulative_quotes[start_index - 1] if start_index > 0 else 0.0
+        end_index = min(start_index + DOLLAR_IMBALANCE_BOUNDARY_SEARCH_STEP, row_count)
+
+        while True:
+            window = np.abs(cumulative_quotes[start_index:end_index] - base_quote)
+            hits = np.flatnonzero(window >= DOLLAR_IMBALANCE_KLINE_SIZE)
+            if len(hits) > 0:
+                starts.append(start_index)
+                ends.append(start_index + int(hits[0]))
+                break
+
+            if end_index == row_count:
+                starts.append(start_index)
+                ends.append(row_count - 1)
+                break
+
+            end_index = min(end_index + DOLLAR_IMBALANCE_BOUNDARY_SEARCH_STEP, row_count)
+
+        start_index = ends[-1] + 1
+
+    return np.array(starts, dtype=np.int64), np.array(ends, dtype=np.int64)
+
+
+def _quantile_index(length: int, level: float) -> int:
+    index = int(level * length)
+    if index == length:
+        index -= 1
+    return index
+
+
+def _price_distribution_columns(
+    prices: npt.NDArray[np.float64],
+    starts: npt.NDArray[np.int64],
+    ends: npt.NDArray[np.int64],
+) -> tuple[npt.NDArray[np.float64], npt.NDArray[np.float64], npt.NDArray[np.float64]]:
+    stds: list[float] = []
+    medians: list[float] = []
+    iqrs: list[float] = []
+
+    for start, end in zip(starts, ends, strict=True):
+        sorted_prices = np.sort(prices[start : end + 1])
+        row_count = len(sorted_prices)
+        stds.append(float(sorted_prices.std()))
+        medians.append(float(sorted_prices[_quantile_index(row_count, 0.5)]))
+        iqrs.append(
+            float(
+                sorted_prices[_quantile_index(row_count, 0.75)]
+                - sorted_prices[_quantile_index(row_count, 0.25)]
+            )
+        )
+
+    return (
+        np.array(stds, dtype=np.float64),
+        np.array(medians, dtype=np.float64),
+        np.array(iqrs, dtype=np.float64),
     )
 
 
-def _flush_kline_rows(
-    client: ClickHouseClientProtocol,
-    database: str,
-    rows: list[tuple[object, ...]],
-) -> None:
-    if rows:
-        _insert_kline_rows(client, database, rows)
-        rows.clear()
+def _sum_by_bar(
+    values: npt.NDArray[np.float64],
+    starts: npt.NDArray[np.int64],
+) -> npt.NDArray[np.float64]:
+    return cast(npt.NDArray[np.float64], np.add.reduceat(values, starts))
+
+
+def _max_by_bar(
+    values: npt.NDArray[np.float64],
+    starts: npt.NDArray[np.int64],
+) -> npt.NDArray[np.float64]:
+    return cast(npt.NDArray[np.float64], np.maximum.reduceat(values, starts))
+
+
+def _min_by_bar(
+    values: npt.NDArray[np.float64],
+    starts: npt.NDArray[np.int64],
+) -> npt.NDArray[np.float64]:
+    return cast(npt.NDArray[np.float64], np.minimum.reduceat(values, starts))
+
+
+def _arrow_array(values: Sequence[object] | npt.NDArray[np.generic]) -> pa.Array:
+    return pa.array(values)
+
+
+def _kline_rows(table: pa.Table) -> pa.Table:
+    prices = _float64_column(table, 'price')
+    quantities = _float64_column(table, 'quantity')
+    quote_quantities = _float64_column(table, 'quote_quantity')
+    maker_flags = _uint8_column(table, 'is_buyer_maker')
+    datetimes = _datetime_column(table, 'datetime')
+
+    starts, ends = _bar_boundaries(quote_quantities, maker_flags)
+    lengths = (ends - starts + 1).astype(np.uint64)
+
+    liquidities = prices * quantities
+    taker_buy_quotes = quote_quantities.copy()
+    taker_buy_quotes[maker_flags == 1] = 0.0
+    taker_buy_liquidity = _sum_by_bar(taker_buy_quotes, starts)
+    del taker_buy_quotes
+
+    taker_sell_quotes = quote_quantities.copy()
+    taker_sell_quotes[maker_flags == 0] = 0.0
+    taker_sell_liquidity = _sum_by_bar(taker_sell_quotes, starts)
+    del taker_sell_quotes
+
+    maker_float = maker_flags.astype(np.float64)
+    maker_volume = _sum_by_bar(maker_float * quantities, starts)
+    maker_liquidity = _sum_by_bar(maker_float * liquidities, starts)
+    stds, medians, iqrs = _price_distribution_columns(prices, starts, ends)
+
+    return pa.table(
+        {
+            'start_datetime': _arrow_array(datetimes[starts]),
+            'end_datetime': _arrow_array(datetimes[ends]),
+            'dollar_imbalance_bar_id': _arrow_array(
+                np.arange(len(starts), dtype=np.uint64)
+            ),
+            'open': _arrow_array(prices[starts]),
+            'high': _arrow_array(_max_by_bar(prices, starts)),
+            'low': _arrow_array(_min_by_bar(prices, starts)),
+            'close': _arrow_array(prices[ends]),
+            'mean': _arrow_array(_sum_by_bar(prices, starts) / lengths),
+            'std': _arrow_array(stds),
+            'median': _arrow_array(medians),
+            'iqr': _arrow_array(iqrs),
+            'volume': _arrow_array(_sum_by_bar(quantities, starts)),
+            'maker_ratio': _arrow_array(_sum_by_bar(maker_float, starts) / lengths),
+            'no_of_trades': _arrow_array(lengths),
+            'open_liquidity': _arrow_array(liquidities[starts]),
+            'high_liquidity': _arrow_array(_max_by_bar(liquidities, starts)),
+            'low_liquidity': _arrow_array(_min_by_bar(liquidities, starts)),
+            'close_liquidity': _arrow_array(liquidities[ends]),
+            'liquidity_sum': _arrow_array(_sum_by_bar(liquidities, starts)),
+            'maker_volume': _arrow_array(maker_volume),
+            'maker_liquidity': _arrow_array(maker_liquidity),
+            'taker_buy_liquidity': _arrow_array(taker_buy_liquidity),
+            'taker_sell_liquidity': _arrow_array(taker_sell_liquidity),
+            'dollar_imbalance': _arrow_array(taker_buy_liquidity - taker_sell_liquidity),
+        }
+    )
 
 
 def _insert_partition_rows(
-    client: ClickHouseClientProtocol,
-    database: str,
+    settings: ClickHouseSettings,
     partition_date: str,
 ) -> None:
     partition_start, partition_end = _partition_datetime_bounds(partition_date)
-    pending_rows: list[tuple[object, ...]] = []
-    last_trade: _Trade | None = None
-    open_bar: _DollarImbalanceBar | None = None
-    next_bar_id = 0
+    client = _make_clickhouse_arrow_client(settings)
 
-    batch = _fetch_trade_batch(
-        client,
-        database,
-        partition_start,
-        partition_end,
-        last_trade,
-    )
-    while batch:
-        for row in batch:
-            trade = _parse_trade_row(row)
-            if open_bar is None:
-                open_bar = _DollarImbalanceBar.from_trade(next_bar_id, trade)
-            else:
-                open_bar.add_trade(trade)
-
-            if abs(open_bar.dollar_imbalance) >= DOLLAR_IMBALANCE_KLINE_SIZE:
-                pending_rows.append(open_bar.to_insert_row())
-                next_bar_id += 1
-                open_bar = None
-
-            last_trade = trade
-            if len(pending_rows) >= KLINE_INSERT_BATCH_SIZE:
-                _flush_kline_rows(client, database, pending_rows)
-
-        batch = _fetch_trade_batch(
+    try:
+        trade_rows = _query_partition_trades(
             client,
-            database,
+            settings.database,
             partition_start,
             partition_end,
-            last_trade,
         )
+        if trade_rows.num_rows == 0:
+            return
 
-    if open_bar is not None:
-        pending_rows.append(open_bar.to_insert_row())
-
-    _flush_kline_rows(client, database, pending_rows)
+        client.insert_arrow(
+            f'{settings.database}.{DOLLAR_IMBALANCE_KLINES_TABLE_NAME}',
+            _kline_rows(trade_rows),
+        )
+    finally:
+        client.close()
 
 
 @asset(
@@ -381,7 +362,7 @@ def refresh_binance_spot_dollar_imbalance_klines_origo(
             )
             _delete_partition_rows(client, settings.database, partition_date)
 
-        _insert_partition_rows(client, settings.database, partition_date)
+        _insert_partition_rows(settings, partition_date)
         inserted_count = _count_partition_rows(client, settings.database, partition_date)
 
         return {

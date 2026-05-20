@@ -67,10 +67,11 @@ def _wait_for_clickhouse(host: str, port: int, user: str, password: str) -> None
     raise RuntimeError(f'ClickHouse container did not become ready: {last_error}')
 
 
-def _clickhouse_env(native_port: int, password: str) -> dict[str, str]:
+def _clickhouse_env(native_port: int, http_port: int, password: str) -> dict[str, str]:
     return {
         'CLICKHOUSE_HOST': '127.0.0.1',
         'CLICKHOUSE_PORT': str(native_port),
+        'CLICKHOUSE_HTTP_PORT': str(http_port),
         'CLICKHOUSE_USER': 'default',
         'CLICKHOUSE_PASSWORD': password,
         'CLICKHOUSE_DATABASE': ORIGO_DATABASE,
@@ -120,8 +121,9 @@ def clickhouse_settings() -> dict[str, str]:
 
     container_name = f'tdw-origo-tests-{uuid4().hex[:12]}'
     native_port = _free_port()
+    http_port = _free_port()
     password = 'test-password'
-    settings = _clickhouse_env(native_port, password)
+    settings = _clickhouse_env(native_port, http_port, password)
 
     subprocess.run(
         [
@@ -137,6 +139,8 @@ def clickhouse_settings() -> dict[str, str]:
             '/var/log/clickhouse-server:size=64m',
             '--publish',
             f'127.0.0.1:{native_port}:9000',
+            '--publish',
+            f'127.0.0.1:{http_port}:8123',
             '--env',
             'CLICKHOUSE_USER=default',
             '--env',
