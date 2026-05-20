@@ -229,3 +229,21 @@ def test_dollar_kline_assets_job_and_schedule_are_registered(
         origo_assets['create_binance_spot_dollar_klines_table_origo'].key,
         origo_assets['insert_daily_binance_spot_trades_to_origo'].key,
     }
+
+
+def test_dollar_kline_backfill_job_matches_daily_time_bar_partition_pattern(
+    origo_definitions_module: object,
+) -> None:
+    backfill_job = origo_definitions_module.defs.get_job_def(
+        'backfill_binance_spot_dollar_klines_origo_job'
+    )
+    node_names = set(backfill_job.graph.node_dict.keys())
+
+    assert node_names == {
+        'insert_daily_binance_spot_trades_to_origo',
+        'refresh_binance_spot_dollar_klines_origo',
+    }
+    assert backfill_job.partitions_def is not None
+    assert '2024-01-01' in backfill_job.partitions_def.get_partition_keys(
+        current_time=datetime(2024, 1, 3)
+    )

@@ -1,3 +1,6 @@
+# v1.13.1 on May 20, 2026
+- Add a dedicated Binance spot dollar klines backfill job.
+
 # v1.13.0 on May 20, 2026
 - Add Binance spot dollar imbalance klines on Origo daily spot trades.
 
