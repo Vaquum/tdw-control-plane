@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from dagster import DefaultScheduleStatus, build_schedule_context, materialize
+from dagster import DagsterInstance, DefaultScheduleStatus, build_schedule_context, materialize
 
 from .helpers import ORIGO_DATABASE
 
@@ -17,6 +17,9 @@ DEPTH20_EXPECTED_COLUMNS = [
     'book_ask_depth_20_notional',
     'book_imbalance_20',
 ]
+DEPTH20_TEST_LEVELS_SQL = (
+    '[' + ','.join(f'({level}.0,{level}.0)' for level in range(1, 21)) + ']'
+)
 
 
 def _table_metadata(query_origo, table_name: str) -> tuple[str, str, str]:
@@ -175,3 +178,82 @@ def test_binance_spot_depth20_backfill_job_is_manual_data_source_only(
         '2026-05-14T10:29:00+0000',
         '2026-05-14T10:30:00+0000',
     ]
+
+
+def test_binance_spot_depth20_reconcile_job_reports_existing_table_minutes(
+    origo_definitions_module,
+    query_origo,
+    origo_assets: dict[str, object],
+) -> None:
+    reconcile_job = origo_definitions_module.defs.get_job_def(
+        'reconcile_binance_spot_depth20_partition_state_origo_job'
+    )
+    node_names = set(reconcile_job.graph.node_dict.keys())
+    instance = DagsterInstance.ephemeral()
+    partition_key = '2026-05-14T10:28:00+0000'
+
+    setup_result = materialize(
+        [
+            origo_assets['create_origo_database'],
+            origo_assets['create_binance_spot_depth20_snapshots_table_origo'],
+            origo_assets['create_binance_spot_depth20_1m_table_origo'],
+        ],
+        instance=instance,
+    )
+    assert setup_result.success
+
+    query_origo(
+        f"""
+        INSERT INTO {ORIGO_DATABASE}.{origo_assets['DEPTH20_SNAPSHOTS_TABLE_NAME']}
+        (
+            datetime,
+            source_timestamp_ms,
+            last_update_id,
+            bids,
+            asks
+        ) VALUES (
+            toDateTime64('2026-05-14 10:28:00.000', 3),
+            1,
+            1,
+            {DEPTH20_TEST_LEVELS_SQL},
+            {DEPTH20_TEST_LEVELS_SQL}
+        )
+        """
+    )
+    query_origo(
+        f"""
+        INSERT INTO {ORIGO_DATABASE}.{origo_assets['DEPTH20_1M_TABLE_NAME']}
+        (
+            datetime,
+            source_timestamp_ms,
+            book_mid_price,
+            book_spread_bps,
+            book_bid_depth_20_notional,
+            book_ask_depth_20_notional,
+            book_imbalance_20
+        ) VALUES (
+            toDateTime('2026-05-14 10:28:00'),
+            1,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            0.0
+        )
+        """
+    )
+
+    reconcile_result = materialize(
+        [origo_assets['reconcile_binance_spot_depth20_partition_state_origo']],
+        instance=instance,
+    )
+
+    assert node_names == {'reconcile_binance_spot_depth20_partition_state_origo'}
+    assert reconcile_job.partitions_def is None
+    assert reconcile_result.success
+    assert instance.get_materialized_partitions(
+        origo_assets['sync_binance_spot_depth20_snapshots_to_origo'].key
+    ) == {partition_key}
+    assert instance.get_materialized_partitions(
+        origo_assets['refresh_binance_spot_depth20_1m_origo'].key
+    ) == {partition_key}

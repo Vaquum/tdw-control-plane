@@ -131,6 +131,9 @@ from .assets.sync_binance_spot_depth20_snapshots_to_origo import (
     depth20_minute_partitions,
     sync_binance_spot_depth20_snapshots_to_origo,
 )
+from .assets.reconcile_binance_spot_depth20_partition_state_origo import (
+    reconcile_binance_spot_depth20_partition_state_origo,
+)
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -288,6 +291,11 @@ refresh_binance_spot_depth20_data_source_job = define_asset_job(
 backfill_binance_spot_depth20_data_source_job = define_asset_job(
     name='backfill_binance_spot_depth20_data_source_job',
     selection=_BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION,
+)
+
+reconcile_binance_spot_depth20_partition_state_origo_job = define_asset_job(
+    name='reconcile_binance_spot_depth20_partition_state_origo_job',
+    selection=['reconcile_binance_spot_depth20_partition_state_origo'],
 )
 
 insert_daily_binance_trades_tdw_job = define_asset_job(
@@ -758,6 +766,7 @@ defs = Definitions(
             refresh_binance_futures_klines_origo,
             sync_binance_spot_depth20_snapshots_to_origo,
             refresh_binance_spot_depth20_1m_origo,
+            reconcile_binance_spot_depth20_partition_state_origo,
             refresh_aligned_1m_exchange_from_binance_spot_origo,
             refresh_aligned_1m_exchange_from_binance_futures_origo,
             insert_daily_binance_trades_to_tdw,
@@ -822,6 +831,7 @@ defs = Definitions(
           refresh_binance_futures_data_source_job,
           refresh_binance_spot_depth20_data_source_job,
           backfill_binance_spot_depth20_data_source_job,
+          reconcile_binance_spot_depth20_partition_state_origo_job,
           insert_daily_binance_trades_tdw_job,
           publish_binance_spot_klines_to_huggingface_job,
           publish_binance_spot_15m_klines_to_huggingface_job,
