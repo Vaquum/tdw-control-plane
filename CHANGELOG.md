@@ -1,3 +1,6 @@
+# v1.14.0 on May 20, 2026
+- Add Hugging Face publishers for BTCUSDT 100k, 2M, 4M, 8M, 16M, and 32M dollar spot kline snapshots from Origo dollar klines.
+
 # v1.13.2 on May 20, 2026
 - Decouple the Binance spot dollar klines backfill job from raw-trades ingestion and fail the dollar refresh when raw trades are absent.
 
