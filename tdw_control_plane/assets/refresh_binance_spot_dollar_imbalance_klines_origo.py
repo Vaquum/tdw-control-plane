@@ -207,16 +207,16 @@ def _price_distribution_columns(
     iqrs: list[float] = []
 
     for start, end in zip(starts, ends, strict=True):
-        sorted_prices = np.sort(prices[start : end + 1])
-        row_count = len(sorted_prices)
-        stds.append(float(sorted_prices.std()))
-        medians.append(float(sorted_prices[_quantile_index(row_count, 0.5)]))
-        iqrs.append(
-            float(
-                sorted_prices[_quantile_index(row_count, 0.75)]
-                - sorted_prices[_quantile_index(row_count, 0.25)]
-            )
-        )
+        bar_prices = prices[start : end + 1]
+        row_count = len(bar_prices)
+        q25_index = _quantile_index(row_count, 0.25)
+        median_index = _quantile_index(row_count, 0.5)
+        q75_index = _quantile_index(row_count, 0.75)
+        partitioned_prices = np.partition(bar_prices, (q25_index, median_index, q75_index))
+
+        stds.append(float(bar_prices.std()))
+        medians.append(float(partitioned_prices[median_index]))
+        iqrs.append(float(partitioned_prices[q75_index] - partitioned_prices[q25_index]))
 
     return (
         np.array(stds, dtype=np.float64),
