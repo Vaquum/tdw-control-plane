@@ -1,3 +1,6 @@
+# v1.13.4 on May 20, 2026
+- Add a manual Origo depth20 partition-state reconciliation job for existing ClickHouse rows.
+
 # v1.13.3 on May 20, 2026
 - Add manual Origo backfill jobs for Binance spot raw trades and depth20 snapshots plus 1m projection.
 
