@@ -1,8 +1,20 @@
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import AssetExecutionContext, asset
+
+__all__ = [
+    'ClickHouseClientProtocol',
+    'ClickHouseSettings',
+    '_get_clickhouse_settings',
+    '_make_clickhouse_client',
+    'create_origo_database',
+    'get_clickhouse_settings',
+    'make_clickhouse_client',
+]
 
 DEFAULT_CLICKHOUSE_HOST = 'clickhouse'
 DEFAULT_CLICKHOUSE_PORT = 9000
@@ -16,6 +28,20 @@ class ClickHouseSettings:
     user: str
     password: str
     database: str
+
+
+@runtime_checkable
+class ClickHouseClientProtocol(Protocol):
+    def execute(
+        self,
+        query: str,
+        params: object | None = None,
+        settings: Mapping[str, object] | None = None,
+    ) -> list[tuple[object, ...]]:
+        raise NotImplementedError
+
+    def disconnect(self) -> None:
+        raise NotImplementedError
 
 
 def _require_env(name: str) -> str:
@@ -50,6 +76,17 @@ def _make_clickhouse_client(settings: ClickHouseSettings) -> ClickhouseClient:
         user=settings.user,
         password=settings.password,
     )
+
+
+def get_clickhouse_settings() -> ClickHouseSettings:
+    return _get_clickhouse_settings()
+
+
+def make_clickhouse_client(settings: ClickHouseSettings) -> ClickHouseClientProtocol:
+    client = _make_clickhouse_client(settings)
+    if not isinstance(client, ClickHouseClientProtocol):
+        raise TypeError('clickhouse_driver.Client does not satisfy the ClickHouse client contract.')
+    return client
 
 
 @asset(

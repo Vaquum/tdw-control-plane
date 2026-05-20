@@ -1,9 +1,4 @@
-import os
-from collections.abc import Mapping
-from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
-from typing import Protocol, runtime_checkable
 
 from dagster import AssetExecutionContext, asset
 
@@ -12,79 +7,19 @@ from .create_binance_spot_volume_klines_table_origo import (
     create_binance_spot_volume_klines_table_origo,
 )
 from .create_binance_trades_table_origo import RAW_TABLE_NAME
+from .create_origo_database import (
+    ClickHouseClientProtocol,
+    get_clickhouse_settings,
+    make_clickhouse_client,
+)
 from .daily_trades_to_origo import daily_partitions, insert_daily_binance_spot_trades_to_origo
 
-_DEFAULT_CLICKHOUSE_HOST = 'clickhouse'
-_DEFAULT_CLICKHOUSE_PORT = 9000
-_DEFAULT_CLICKHOUSE_USER = 'default'
 VOLUME_KLINE_SIZE = 100.0
-
-
-@dataclass(frozen=True)
-class _ClickHouseSettings:
-    host: str
-    port: int
-    user: str
-    password: str
-    database: str
-
-
-@runtime_checkable
-class _ClickHouseClientLike(Protocol):
-    def execute(
-        self,
-        query: str,
-        params: object | None = None,
-        *,
-        settings: Mapping[str, object] | None = None,
-    ) -> list[tuple[object, ...]]:
-        raise NotImplementedError
-
-    def disconnect(self) -> None:
-        raise NotImplementedError
-
-
-def _require_env(name: str) -> str:
-    value = os.environ.get(name)
-    if not value:
-        raise RuntimeError(f'{name} environment variable must be set.')
-    return value
-
-
-def _get_clickhouse_port() -> int:
-    value = os.environ.get('CLICKHOUSE_PORT', str(_DEFAULT_CLICKHOUSE_PORT))
-    try:
-        return int(value)
-    except ValueError as exc:
-        raise RuntimeError('CLICKHOUSE_PORT environment variable must be an integer.') from exc
-
-
-def _get_clickhouse_settings() -> _ClickHouseSettings:
-    return _ClickHouseSettings(
-        host=os.environ.get('CLICKHOUSE_HOST', _DEFAULT_CLICKHOUSE_HOST),
-        port=_get_clickhouse_port(),
-        user=os.environ.get('CLICKHOUSE_USER', _DEFAULT_CLICKHOUSE_USER),
-        password=_require_env('CLICKHOUSE_PASSWORD'),
-        database=os.environ.get('CLICKHOUSE_DATABASE', 'origo'),
-    )
-
-
-def _make_clickhouse_client(settings: _ClickHouseSettings) -> _ClickHouseClientLike:
-    client_factory = getattr(import_module('clickhouse_driver'), 'Client')
-    client = client_factory(
-        host=settings.host,
-        port=settings.port,
-        user=settings.user,
-        password=settings.password,
-    )
-    if not isinstance(client, _ClickHouseClientLike):
-        raise TypeError('clickhouse_driver.Client does not satisfy the ClickHouse client contract.')
-    return client
 
 
 def _partition_date_from_context(context: AssetExecutionContext) -> str:
     partition_key = context.partition_key
-    if isinstance(partition_key, str):
+    if partition_key is not None:
         return partition_key
 
     target_date = datetime.now(UTC) - timedelta(days=1)
@@ -92,7 +27,7 @@ def _partition_date_from_context(context: AssetExecutionContext) -> str:
 
 
 def _delete_partition_rows(
-    client: _ClickHouseClientLike,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> None:
@@ -106,7 +41,7 @@ def _delete_partition_rows(
 
 
 def _count_partition_rows(
-    client: _ClickHouseClientLike,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> int:
@@ -117,14 +52,11 @@ def _count_partition_rows(
         WHERE toDate(start_datetime) = toDate('{partition_date}')
         """
     )
-    count_value = result[0][0]
-    if not isinstance(count_value, int):
-        raise RuntimeError(f'ClickHouse count query returned non-integer value: {count_value!r}')
-    return count_value
+    return int(result[0][0])
 
 
 def _insert_partition_rows(
-    client: _ClickHouseClientLike,
+    client: ClickHouseClientProtocol,
     database: str,
     partition_date: str,
 ) -> None:
@@ -194,8 +126,8 @@ def refresh_binance_spot_volume_klines_origo(
     context: AssetExecutionContext,
 ) -> dict[str, object]:
     partition_date = _partition_date_from_context(context)
-    settings = _get_clickhouse_settings()
-    client = _make_clickhouse_client(settings)
+    settings = get_clickhouse_settings()
+    client = make_clickhouse_client(settings)
 
     try:
         existing_count = _count_partition_rows(client, settings.database, partition_date)
