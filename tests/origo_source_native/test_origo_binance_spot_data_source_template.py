@@ -99,6 +99,21 @@ def test_daily_binance_spot_pipeline_schedule_targets_binance_spot_data_source_j
     }
 
 
+def test_binance_spot_trades_backfill_job_is_raw_source_only(
+    origo_definitions_module,
+) -> None:
+    backfill_job = origo_definitions_module.defs.get_job_def(
+        'backfill_binance_spot_trades_origo_job'
+    )
+    node_names = set(backfill_job.graph.node_dict.keys())
+
+    assert node_names == {'insert_daily_binance_spot_trades_to_origo'}
+    assert backfill_job.partitions_def is not None
+    assert '2024-01-01' in backfill_job.partitions_def.get_partition_keys(
+        current_time=datetime(2024, 1, 3)
+    )
+
+
 def test_daily_binance_spot_pipeline_schedule_requests_latest_daily_partition(
     origo_definitions_module,
     materialize_binance_spot_data_source_assets,

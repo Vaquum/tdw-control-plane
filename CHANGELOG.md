@@ -1,3 +1,6 @@
+# v1.13.3 on May 20, 2026
+- Add manual Origo backfill jobs for Binance spot raw trades and depth20 snapshots.
+
 # v1.13.2 on May 20, 2026
 - Decouple the Binance spot dollar klines backfill job from raw-trades ingestion and fail the dollar refresh when raw trades are absent.
 

@@ -162,3 +162,18 @@ def test_binance_spot_depth20_data_source_job_and_schedule_are_registered(
     assert len(tick.run_requests) == 1
     assert tick.run_requests[0].run_key == 'binance_spot_depth20::2026-05-13T13:23:00+00:00'
     assert tick.run_requests[0].run_config == _depth20_run_config()
+
+
+def test_binance_spot_depth20_backfill_job_is_manual_data_source_only(
+    origo_definitions_module,
+) -> None:
+    backfill_job = origo_definitions_module.defs.get_job_def(
+        'backfill_binance_spot_depth20_data_source_job'
+    )
+    node_names = set(backfill_job.graph.node_dict.keys())
+
+    assert node_names == {
+        'sync_binance_spot_depth20_snapshots_to_origo',
+        'refresh_binance_spot_depth20_1m_origo',
+    }
+    assert backfill_job.partitions_def is None
