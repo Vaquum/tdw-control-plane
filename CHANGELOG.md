@@ -1,3 +1,6 @@
+# v1.12.0 on May 20, 2026
+- Add Binance spot tick klines on Origo daily spot trades.
+
 # v1.11.0 on May 19, 2026
 - Add Binance spot volume klines on Origo daily spot trades.
 
