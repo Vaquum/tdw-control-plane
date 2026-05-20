@@ -19,7 +19,7 @@ VOLUME_KLINE_SIZE = 100.0
 
 def _partition_date_from_context(context: AssetExecutionContext) -> str:
     partition_key = context.partition_key
-    if partition_key is not None:
+    if isinstance(partition_key, str):
         return partition_key
 
     target_date = datetime.now(UTC) - timedelta(days=1)
@@ -52,7 +52,10 @@ def _count_partition_rows(
         WHERE toDate(start_datetime) = toDate('{partition_date}')
         """
     )
-    return int(result[0][0])
+    count_value = result[0][0]
+    if not isinstance(count_value, int):
+        raise TypeError(f'Expected int scalar from ClickHouse, got {type(count_value).__name__}')
+    return count_value
 
 
 def _insert_partition_rows(
