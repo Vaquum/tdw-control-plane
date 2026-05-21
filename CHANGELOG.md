@@ -1,5 +1,5 @@
 # v1.14.1 on May 21, 2026
-- Fix the Binance spot dollar kline base size to 1M and publish 15M, 30M, 60M, 120M, and 240M dollar snapshots.
+- Fix the Binance spot dollar kline base size to 1M and publish 1M, 15M, 30M, 60M, 120M, and 240M dollar snapshots.
 
 # v1.14.0 on May 20, 2026
 - Add Hugging Face publishers for BTCUSDT 100k, 2M, 4M, 8M, 16M, and 32M dollar spot kline snapshots from Origo dollar klines.
