@@ -81,6 +81,15 @@ def test_binance_spot_dollar_klines_table_name_contract(
     assert origo_assets['DOLLAR_KLINES_TABLE_NAME'] == 'binance_spot_dollar_klines'
 
 
+def test_binance_spot_dollar_klines_base_size_contract(
+    origo_assets: dict[str, object],
+) -> None:
+    assert (
+        origo_assets['refresh_binance_spot_dollar_klines_origo_module'].DOLLAR_KLINE_SIZE
+        == 1_000_000.0
+    )
+
+
 def test_binance_spot_dollar_klines_schema_matches_spot_kline_statistics_contract(
     materialize_binance_spot_dollar_klines_assets: Callable[..., object],
     query_origo: Callable[[str], list[tuple[object, ...]]],
