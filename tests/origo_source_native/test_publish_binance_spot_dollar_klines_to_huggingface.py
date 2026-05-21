@@ -209,12 +209,12 @@ def _origo_dollar_klines_dataframe(
     query_origo: Callable[[str], list[tuple[object, ...]]],
     *,
     dollar_size: float,
+    base_bar_count: int,
     database_name: str,
     table_name: str,
     start_date_limit: str,
     end_date_limit: str,
 ) -> pl.DataFrame:
-    base_bar_count = int(dollar_size / 1_000_000.0)
     rows = query_origo(
         f"""
         SELECT
@@ -369,6 +369,9 @@ def test_publish_dollar_kline_snapshots_read_origo_dollar_klines_with_shared_hel
             return _origo_dollar_klines_dataframe(
                 query_origo,
                 dollar_size=dollar_size,
+                base_bar_count=publish_helper_module._base_bar_count_for_dollar_size(
+                    dollar_size
+                ),
                 database_name=database_name,
                 table_name=table_name,
                 start_date_limit=start_date_limit,
