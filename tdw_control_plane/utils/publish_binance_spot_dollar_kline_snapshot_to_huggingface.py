@@ -259,7 +259,7 @@ def _build_dataset_card(
 ) -> str:
     return f"""# BTCUSDT {size_label} dollar spot klines
 
-This dataset is exported daily from `{database_name}.{DOLLAR_KLINES_TABLE_NAME}` using {resolution_label} dollar bars derived from the 100k Origo dollar-kline foundation.
+This dataset is exported daily from `{database_name}.{DOLLAR_KLINES_TABLE_NAME}` using {resolution_label} dollar bars derived from the 1M Origo dollar-kline foundation.
 
 Latest snapshot:
 

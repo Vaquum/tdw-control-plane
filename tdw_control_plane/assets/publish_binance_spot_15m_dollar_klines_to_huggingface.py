@@ -9,17 +9,17 @@ from tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggi
 @asset(
     partitions_def=daily_partitions,
     group_name="binance_data",
-    description="Exports daily BTCUSDT 4M dollar spot klines from origo.binance_spot_dollar_klines and publishes the latest snapshot to Hugging Face.",
+    description="Exports daily BTCUSDT 15M dollar spot klines from origo.binance_spot_dollar_klines and publishes the latest snapshot to Hugging Face.",
 )
-def publish_binance_spot_4m_dollar_klines_to_huggingface(
+def publish_binance_spot_15m_dollar_klines_to_huggingface(
     context: AssetExecutionContext,
 ) -> dict[str, object]:
     return publish_binance_spot_dollar_kline_snapshot_to_huggingface(
         context,
-        dollar_size=4_000_000.0,
-        file_prefix="btcusdt_4m_dollar_kline_20200101_to_",
-        default_repo_id="vaquum/binance_btcusdt_4m_dollar_klines",
+        dollar_size=15_000_000.0,
+        file_prefix="btcusdt_15m_dollar_kline_20200101_to_",
+        default_repo_id="vaquum/binance_btcusdt_15m_dollar_klines",
         repo_id_env=None,
-        size_label="4M",
-        resolution_label="4M-dollar",
+        size_label="15M",
+        resolution_label="15M-dollar",
     )

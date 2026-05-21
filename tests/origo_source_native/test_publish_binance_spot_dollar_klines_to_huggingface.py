@@ -36,64 +36,54 @@ DOLLAR_KLINE_EXPORT_COLUMNS = [
 
 DOLLAR_KLINE_CASES = [
     (
-        '100k',
-        '100k-dollar',
-        100_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_100k_dollar_klines_to_huggingface',
-        'publish_binance_spot_100k_dollar_klines_to_huggingface',
-        'publish_binance_spot_100k_dollar_klines_to_huggingface_sensor',
-        'vaquum/binance_btcusdt_100k_dollar_klines',
-        'btcusdt_100k_dollar_kline_20200101_to_',
+        '15M',
+        '15M-dollar',
+        15_000_000.0,
+        'tdw_control_plane.assets.publish_binance_spot_15m_dollar_klines_to_huggingface',
+        'publish_binance_spot_15m_dollar_klines_to_huggingface',
+        'publish_binance_spot_15m_dollar_klines_to_huggingface_sensor',
+        'vaquum/binance_btcusdt_15m_dollar_klines',
+        'btcusdt_15m_dollar_kline_20200101_to_',
     ),
     (
-        '2M',
-        '2M-dollar',
-        2_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_2m_dollar_klines_to_huggingface',
-        'publish_binance_spot_2m_dollar_klines_to_huggingface',
-        'publish_binance_spot_2m_dollar_klines_to_huggingface_sensor',
-        'vaquum/binance_btcusdt_2m_dollar_klines',
-        'btcusdt_2m_dollar_kline_20200101_to_',
+        '30M',
+        '30M-dollar',
+        30_000_000.0,
+        'tdw_control_plane.assets.publish_binance_spot_30m_dollar_klines_to_huggingface',
+        'publish_binance_spot_30m_dollar_klines_to_huggingface',
+        'publish_binance_spot_30m_dollar_klines_to_huggingface_sensor',
+        'vaquum/binance_btcusdt_30m_dollar_klines',
+        'btcusdt_30m_dollar_kline_20200101_to_',
     ),
     (
-        '4M',
-        '4M-dollar',
-        4_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_4m_dollar_klines_to_huggingface',
-        'publish_binance_spot_4m_dollar_klines_to_huggingface',
-        'publish_binance_spot_4m_dollar_klines_to_huggingface_sensor',
-        'vaquum/binance_btcusdt_4m_dollar_klines',
-        'btcusdt_4m_dollar_kline_20200101_to_',
+        '60M',
+        '60M-dollar',
+        60_000_000.0,
+        'tdw_control_plane.assets.publish_binance_spot_60m_dollar_klines_to_huggingface',
+        'publish_binance_spot_60m_dollar_klines_to_huggingface',
+        'publish_binance_spot_60m_dollar_klines_to_huggingface_sensor',
+        'vaquum/binance_btcusdt_60m_dollar_klines',
+        'btcusdt_60m_dollar_kline_20200101_to_',
     ),
     (
-        '8M',
-        '8M-dollar',
-        8_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_8m_dollar_klines_to_huggingface',
-        'publish_binance_spot_8m_dollar_klines_to_huggingface',
-        'publish_binance_spot_8m_dollar_klines_to_huggingface_sensor',
-        'vaquum/binance_btcusdt_8m_dollar_klines',
-        'btcusdt_8m_dollar_kline_20200101_to_',
+        '120M',
+        '120M-dollar',
+        120_000_000.0,
+        'tdw_control_plane.assets.publish_binance_spot_120m_dollar_klines_to_huggingface',
+        'publish_binance_spot_120m_dollar_klines_to_huggingface',
+        'publish_binance_spot_120m_dollar_klines_to_huggingface_sensor',
+        'vaquum/binance_btcusdt_120m_dollar_klines',
+        'btcusdt_120m_dollar_kline_20200101_to_',
     ),
     (
-        '16M',
-        '16M-dollar',
-        16_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_16m_dollar_klines_to_huggingface',
-        'publish_binance_spot_16m_dollar_klines_to_huggingface',
-        'publish_binance_spot_16m_dollar_klines_to_huggingface_sensor',
-        'vaquum/binance_btcusdt_16m_dollar_klines',
-        'btcusdt_16m_dollar_kline_20200101_to_',
-    ),
-    (
-        '32M',
-        '32M-dollar',
-        32_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_32m_dollar_klines_to_huggingface',
-        'publish_binance_spot_32m_dollar_klines_to_huggingface',
-        'publish_binance_spot_32m_dollar_klines_to_huggingface_sensor',
-        'vaquum/binance_btcusdt_32m_dollar_klines',
-        'btcusdt_32m_dollar_kline_20200101_to_',
+        '240M',
+        '240M-dollar',
+        240_000_000.0,
+        'tdw_control_plane.assets.publish_binance_spot_240m_dollar_klines_to_huggingface',
+        'publish_binance_spot_240m_dollar_klines_to_huggingface',
+        'publish_binance_spot_240m_dollar_klines_to_huggingface_sensor',
+        'vaquum/binance_btcusdt_240m_dollar_klines',
+        'btcusdt_240m_dollar_kline_20200101_to_',
     ),
 ]
 
@@ -160,7 +150,7 @@ def test_dollar_kline_query_uses_arrow_parameters_and_configured_database(
     )
 
     data = publish_helper_module._get_binance_spot_dollar_klines(
-        dollar_size=2_000_000.0,
+        dollar_size=15_000_000.0,
         start_date_limit='2024-01-01',
         end_date_limit='2024-01-02T00:00:00',
         table_name='binance_spot_dollar_klines',
@@ -172,7 +162,7 @@ def test_dollar_kline_query_uses_arrow_parameters_and_configured_database(
     assert 'FROM origo_custom.binance_spot_dollar_klines' in str(recorded['query'])
     assert '2024-01-01' not in str(recorded['query'])
     assert recorded['parameters'] == {
-        'base_bar_count': 20,
+        'base_bar_count': 15,
         'start_dt': '2024-01-01 00:00:00',
         'end_dt': '2024-01-02 00:00:00',
     }
@@ -188,7 +178,7 @@ def test_dollar_kline_query_rejects_unsafe_sql_inputs(
 
     with pytest.raises(ValueError, match='Invalid ClickHouse database name'):
         publish_helper_module._get_binance_spot_dollar_klines(
-            dollar_size=100_000.0,
+            dollar_size=1_000_000.0,
             start_date_limit='2024-01-01',
             end_date_limit='2024-01-02',
             table_name='binance_spot_dollar_klines',
@@ -197,7 +187,7 @@ def test_dollar_kline_query_rejects_unsafe_sql_inputs(
 
     with pytest.raises(ValueError, match='start_date_limit must match one of'):
         publish_helper_module._get_binance_spot_dollar_klines(
-            dollar_size=100_000.0,
+            dollar_size=1_000_000.0,
             start_date_limit='2024/01/01',
             end_date_limit='2024-01-02',
             table_name='binance_spot_dollar_klines',
@@ -214,7 +204,7 @@ def _origo_dollar_klines_dataframe(
     start_date_limit: str,
     end_date_limit: str,
 ) -> pl.DataFrame:
-    base_bar_count = int(dollar_size / 100_000.0)
+    base_bar_count = int(dollar_size / 1_000_000.0)
     rows = query_origo(
         f"""
         SELECT

@@ -14,7 +14,7 @@ from .create_origo_database import (
 )
 from .daily_trades_to_origo import daily_partitions, insert_daily_binance_spot_trades_to_origo
 
-DOLLAR_KLINE_SIZE = 100_000.0
+DOLLAR_KLINE_SIZE = 1_000_000.0
 RAW_TRADES_ASSET_KEY = insert_daily_binance_spot_trades_to_origo.key
 
 
