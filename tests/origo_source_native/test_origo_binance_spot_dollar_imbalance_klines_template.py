@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 import pytest
-from dagster import DefaultScheduleStatus
+from dagster import DagsterInstance, DefaultScheduleStatus, materialize
 
 from .helpers import ORIGO_DATABASE
 
@@ -205,6 +205,62 @@ def test_same_partition_rerun_is_idempotent_for_dollar_imbalance_klines(
     assert second.success
     assert first_rows == second_rows
     assert len(second_rows) == 3
+
+
+def test_dollar_imbalance_kline_refresh_fails_before_replacing_when_raw_partition_is_absent(
+    query_origo: Callable[[str], list[tuple[object, ...]]],
+    origo_assets: dict[str, object],
+) -> None:
+    instance = DagsterInstance.ephemeral()
+    first = materialize(
+        [
+            origo_assets['create_origo_database'],
+            origo_assets['create_binance_daily_spot_trades_table_origo'],
+            origo_assets['create_binance_spot_dollar_imbalance_klines_table_origo'],
+            origo_assets['insert_daily_binance_spot_trades_to_origo'],
+            origo_assets['refresh_binance_spot_dollar_imbalance_klines_origo'],
+        ],
+        instance=instance,
+        partition_key='2024-01-01',
+    )
+    before_rows = query_origo(
+        f"""
+        SELECT count()
+        FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_IMBALANCE_KLINES_TABLE_NAME']}
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
+        """
+    )
+    query_origo(
+        f"""
+        ALTER TABLE {ORIGO_DATABASE}.{origo_assets['RAW_TABLE_NAME']}
+        DELETE WHERE toDate(datetime) = toDate('2024-01-01')
+        SETTINGS mutations_sync = 2
+        """
+    )
+
+    result = materialize(
+        [
+            origo_assets['create_origo_database'],
+            origo_assets['create_binance_daily_spot_trades_table_origo'],
+            origo_assets['create_binance_spot_dollar_imbalance_klines_table_origo'],
+            origo_assets['refresh_binance_spot_dollar_imbalance_klines_origo'],
+        ],
+        instance=instance,
+        partition_key='2024-01-01',
+        raise_on_error=False,
+    )
+    after_rows = query_origo(
+        f"""
+        SELECT count()
+        FROM {ORIGO_DATABASE}.{origo_assets['DOLLAR_IMBALANCE_KLINES_TABLE_NAME']}
+        WHERE toDate(start_datetime) = toDate('2024-01-01')
+        """
+    )
+
+    assert first.success
+    assert before_rows[0][0] > 0
+    assert not result.success
+    assert before_rows == after_rows
 
 
 def test_dollar_imbalance_kline_assets_job_and_schedule_are_registered(
