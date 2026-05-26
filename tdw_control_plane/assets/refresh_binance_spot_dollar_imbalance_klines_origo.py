@@ -125,13 +125,13 @@ def _count_raw_partition_rows(
     database: str,
     partition_date: str,
 ) -> int:
-    partition_start, partition_end = _partition_datetime_bounds(partition_date)
+    start_datetime, end_datetime = _partition_datetime_bounds(partition_date)
     result = client.execute(
         f"""
         SELECT count()
         FROM {database}.{RAW_TABLE_NAME}
-        WHERE datetime >= toDateTime64('{partition_start}', 6)
-          AND datetime < toDateTime64('{partition_end}', 6)
+        WHERE datetime >= toDateTime64('{start_datetime}', 6)
+          AND datetime < toDateTime64('{end_datetime}', 6)
         """
     )
     return int(result[0][0])
