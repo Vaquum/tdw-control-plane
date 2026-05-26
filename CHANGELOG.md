@@ -1,3 +1,6 @@
+# v1.14.2 on May 22, 2026
+- Require raw spot trades before replacing Binance spot dollar imbalance kline partitions.
+
 # v1.14.1 on May 21, 2026
 - Fix the Binance spot dollar kline base size to 1M and publish 1M, 15M, 30M, 60M, 120M, and 240M dollar snapshots.
 
