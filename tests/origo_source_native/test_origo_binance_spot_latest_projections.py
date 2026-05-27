@@ -253,7 +253,7 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
         f"""
         SELECT toDateTime('{minute_text}') AS datetime, {', '.join(KLINE_COLUMNS[1:])}
         FROM {ORIGO_DATABASE}.binance_spot_klines
-        WHERE datetime = toDateTime('2024-01-01 00:00:00')
+        WHERE toDate(datetime) = toDate('{FIXTURE_DATE}')
         """
     )
     latest_kline_rows = query_origo(
