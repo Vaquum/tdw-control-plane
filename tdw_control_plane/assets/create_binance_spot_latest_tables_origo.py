@@ -47,7 +47,7 @@ def _latest_raw_table_sql(settings: ClickHouseSettings) -> str:
         ENGINE = MergeTree()
         PARTITION BY toYYYYMMDD(minute_start)
         ORDER BY (minute_start, trade_id)
-        TTL minute_start + INTERVAL 2 DAY DELETE
+        TTL toDateTime(datetime) + INTERVAL 2 DAY DELETE
         """
 
 

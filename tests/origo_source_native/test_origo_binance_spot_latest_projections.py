@@ -56,14 +56,21 @@ DOLLAR_CUT_TABLES = [
     'binance_spot_240M_dollar_klines_latest',
 ]
 LATEST_MINUTE_TAG = 'binance_spot_latest_minute_start'
+FIXTURE_DATE = '2024-01-01'
 
 
-def _minute_key(date_str: str) -> str:
-    return f'{date_str}T00:00:00Z'
+def _minute_key(value: datetime) -> str:
+    return value.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def _fixture_latest_batch(date_str: str) -> LatestTradeBatch:
-    fixture_rows = load_expected_trade_rows(date_str)
+def _unexpired_minute(offset_minutes: int = 0) -> datetime:
+    base = datetime.now(UTC).replace(second=0, microsecond=0) - timedelta(hours=1)
+    return base + timedelta(minutes=offset_minutes)
+
+
+def _fixture_latest_batch(minute_start: datetime) -> LatestTradeBatch:
+    source_minute = datetime.fromisoformat(FIXTURE_DATE)
+    fixture_rows = load_expected_trade_rows(FIXTURE_DATE)
     trades: list[BinanceHistoricalTrade] = []
     for row in fixture_rows:
         trade_id, price, quantity, quote_quantity, timestamp, maker, best_match, dt = row
@@ -75,20 +82,21 @@ def _fixture_latest_batch(date_str: str) -> LatestTradeBatch:
         assert isinstance(maker, int)
         assert isinstance(best_match, int)
         assert isinstance(dt, datetime)
+        shifted_datetime = minute_start.replace(tzinfo=None) + (dt - source_minute)
         trades.append(
             BinanceHistoricalTrade(
                 trade_id=trade_id,
                 price=price,
                 quantity=quantity,
                 quote_quantity=quote_quantity,
-                timestamp=timestamp,
+                timestamp=int(shifted_datetime.replace(tzinfo=UTC).timestamp() * 1000),
                 is_buyer_maker=bool(maker),
                 is_best_match=bool(best_match),
-                datetime=dt,
+                datetime=shifted_datetime,
             )
         )
 
-    minute_start = datetime.fromisoformat(date_str).replace(tzinfo=UTC)
+    minute_start = minute_start.astimezone(UTC)
     return LatestTradeBatch(
         bounds=LatestTradeIdBounds(
             minute_start=minute_start.replace(tzinfo=None),
@@ -107,7 +115,7 @@ def _install_fixture_fetch(
     def _fetch(symbol: str, minute_start: datetime, minute_end: datetime) -> LatestTradeBatch:
         assert symbol == 'BTCUSDT'
         assert (minute_end - minute_start).total_seconds() == 60
-        return _fixture_latest_batch(minute_start.strftime('%Y-%m-%d'))
+        return _fixture_latest_batch(minute_start)
 
     monkeypatch.setattr(
         origo_assets['sync_binance_spot_trades_latest_origo_module'],
@@ -143,20 +151,22 @@ def test_latest_trade_ingest_requires_exact_closed_minute_id_range(
     origo_assets: dict[str, object],
 ) -> None:
     _install_fixture_fetch(monkeypatch, origo_assets)
+    minute_start = _unexpired_minute()
+    minute_text = minute_start.strftime('%Y-%m-%d %H:%M:%S')
 
-    result = _materialize_latest_sync(origo_assets, minute_start=_minute_key('2024-01-01'))
+    result = _materialize_latest_sync(origo_assets, minute_start=_minute_key(minute_start))
     ledger_rows = query_origo(
         f"""
         SELECT start_trade_id, end_trade_id, row_count, status
         FROM {ORIGO_DATABASE}.binance_spot_trades_latest_ingestion
-        WHERE minute_start = toDateTime('2024-01-01 00:00:00')
+        WHERE minute_start = toDateTime('{minute_text}')
         """
     )
     raw_rows = query_origo(
         f"""
         SELECT min(trade_id), max(trade_id), count()
         FROM {ORIGO_DATABASE}.binance_spot_trades_latest
-        WHERE minute_start = toDateTime('2024-01-01 00:00:00')
+        WHERE minute_start = toDateTime('{minute_text}')
         """
     )
 
@@ -204,9 +214,11 @@ def test_latest_watermark_advances_only_through_contiguous_successful_minutes(
     origo_assets: dict[str, object],
 ) -> None:
     _install_fixture_fetch(monkeypatch, origo_assets)
+    first_minute = _unexpired_minute()
+    gap_minute = _unexpired_minute(2)
 
-    first = _materialize_latest_sync(origo_assets, minute_start=_minute_key('2024-01-01'))
-    second = _materialize_latest_sync(origo_assets, minute_start=_minute_key('2024-01-02'))
+    first = _materialize_latest_sync(origo_assets, minute_start=_minute_key(first_minute))
+    second = _materialize_latest_sync(origo_assets, minute_start=_minute_key(gap_minute))
     rows = query_origo(
         f"""
         SELECT watermark_minute
@@ -219,7 +231,7 @@ def test_latest_watermark_advances_only_through_contiguous_successful_minutes(
 
     assert first.success
     assert second.success
-    assert rows == [(datetime(2024, 1, 1, 0, 0),)]
+    assert rows == [(first_minute.replace(tzinfo=None),)]
 
 
 def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
@@ -231,13 +243,15 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
     origo_assets: dict[str, object],
 ) -> None:
     _install_fixture_fetch(monkeypatch, origo_assets)
+    minute_start = _unexpired_minute()
+    minute_text = minute_start.strftime('%Y-%m-%d %H:%M:%S')
 
-    daily_time = materialize_binance_spot_data_source_assets(partition_key='2024-01-01')
-    daily_dollar = materialize_binance_spot_dollar_klines_assets(partition_key='2024-01-01')
-    latest = materialize_binance_spot_latest_assets(minute_start=_minute_key('2024-01-01'))
+    daily_time = materialize_binance_spot_data_source_assets(partition_key=FIXTURE_DATE)
+    daily_dollar = materialize_binance_spot_dollar_klines_assets(partition_key=FIXTURE_DATE)
+    latest = materialize_binance_spot_latest_assets(minute_start=_minute_key(minute_start))
     daily_kline_rows = query_origo(
         f"""
-        SELECT {', '.join(KLINE_COLUMNS)}
+        SELECT toDateTime('{minute_text}') AS datetime, {', '.join(KLINE_COLUMNS[1:])}
         FROM {ORIGO_DATABASE}.binance_spot_klines
         WHERE datetime = toDateTime('2024-01-01 00:00:00')
         """
@@ -246,12 +260,15 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
         f"""
         SELECT {', '.join(KLINE_COLUMNS)}
         FROM {ORIGO_DATABASE}.binance_spot_klines_latest
-        WHERE datetime = toDateTime('2024-01-01 00:00:00')
+        WHERE datetime = toDateTime('{minute_text}')
         """
     )
     daily_dollar_rows = query_origo(
         f"""
-        SELECT {', '.join(DOLLAR_KLINE_COLUMNS)}
+        SELECT
+            toDateTime('{minute_text}') + (start_datetime - toDateTime('2024-01-01 00:00:00')) AS start_datetime,
+            toDateTime('{minute_text}') + (end_datetime - toDateTime('2024-01-01 00:00:00')) AS end_datetime,
+            {', '.join(DOLLAR_KLINE_COLUMNS[2:])}
         FROM {ORIGO_DATABASE}.binance_spot_dollar_klines
         ORDER BY dollar_bar_id
         """
@@ -260,6 +277,8 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
         f"""
         SELECT {', '.join(DOLLAR_KLINE_COLUMNS)}
         FROM {ORIGO_DATABASE}.binance_spot_dollar_klines_latest
+        WHERE start_datetime >= toDateTime('{minute_text}')
+          AND start_datetime < toDateTime('{minute_text}') + INTERVAL 1 MINUTE
         ORDER BY dollar_bar_id
         """
     )
@@ -278,8 +297,9 @@ def test_latest_child_cuts_cover_time_and_dollar_hf_cadences_from_foundations(
     origo_assets: dict[str, object],
 ) -> None:
     _install_fixture_fetch(monkeypatch, origo_assets)
+    minute_start = _unexpired_minute()
 
-    result = materialize_binance_spot_latest_assets(minute_start=_minute_key('2024-01-01'))
+    result = materialize_binance_spot_latest_assets(minute_start=_minute_key(minute_start))
     time_cut_rows = query_origo(
         f"""
         SELECT name
