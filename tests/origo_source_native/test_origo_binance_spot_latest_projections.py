@@ -139,13 +139,12 @@ def _evaluate_latest_schedule(origo_definitions_module: object, scheduled_time: 
 
 def test_latest_trade_ingest_requires_exact_closed_minute_id_range(
     monkeypatch: pytest.MonkeyPatch,
-    materialize_binance_spot_latest_assets: Callable[..., object],
     query_origo: Callable[[str], list[tuple[object, ...]]],
     origo_assets: dict[str, object],
 ) -> None:
     _install_fixture_fetch(monkeypatch, origo_assets)
 
-    result = materialize_binance_spot_latest_assets(minute_start=_minute_key('2024-01-01'))
+    result = _materialize_latest_sync(origo_assets, minute_start=_minute_key('2024-01-01'))
     ledger_rows = query_origo(
         f"""
         SELECT start_trade_id, end_trade_id, row_count, status
