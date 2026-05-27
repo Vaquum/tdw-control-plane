@@ -252,8 +252,37 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
     daily_kline_rows = query_origo(
         f"""
         SELECT toDateTime('{minute_text}') AS datetime, {', '.join(KLINE_COLUMNS[1:])}
-        FROM {ORIGO_DATABASE}.binance_spot_klines
-        WHERE toDate(datetime) = toDate('{FIXTURE_DATE}')
+        FROM (
+            SELECT
+                kline_datetime,
+                argMin(price, trade_id) AS open,
+                max(price) AS high,
+                min(price) AS low,
+                argMax(price, trade_id) AS close,
+                avg(price) AS mean,
+                stddevPopStable(price) AS std,
+                quantileExact(0.5)(price) AS median,
+                quantileExact(0.75)(price) - quantileExact(0.25)(price) AS iqr,
+                sumKahan(quantity) AS volume,
+                avg(is_buyer_maker) AS maker_ratio,
+                count() AS no_of_trades,
+                argMin(price * quantity, trade_id) AS open_liquidity,
+                max(price * quantity) AS high_liquidity,
+                min(price * quantity) AS low_liquidity,
+                argMax(price * quantity, trade_id) AS close_liquidity,
+                sum(price * quantity) AS liquidity_sum,
+                sumKahan(is_buyer_maker * quantity) AS maker_volume,
+                sum(is_buyer_maker * price * quantity) AS maker_liquidity
+            FROM (
+                SELECT
+                    *,
+                    toDateTime(60 * intDiv(toUnixTimestamp(datetime), 60)) AS kline_datetime
+                FROM {ORIGO_DATABASE}.{origo_assets['RAW_TABLE_NAME']}
+                WHERE toDate(datetime) = toDate('{FIXTURE_DATE}')
+            )
+            GROUP BY kline_datetime
+        )
+        ORDER BY kline_datetime
         """
     )
     latest_kline_rows = query_origo(
@@ -269,7 +298,49 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
             toDateTime('{minute_text}') + (start_datetime - toDateTime('2024-01-01 00:00:00')) AS start_datetime,
             toDateTime('{minute_text}') + (end_datetime - toDateTime('2024-01-01 00:00:00')) AS end_datetime,
             {', '.join(DOLLAR_KLINE_COLUMNS[2:])}
-        FROM {ORIGO_DATABASE}.binance_spot_dollar_klines
+        FROM (
+            SELECT
+                min(datetime) AS start_datetime,
+                max(datetime) AS end_datetime,
+                dollar_bar_id,
+                argMin(price, trade_id) AS open,
+                max(price) AS high,
+                min(price) AS low,
+                argMax(price, trade_id) AS close,
+                avg(price) AS mean,
+                stddevPopStable(price) AS std,
+                quantileExact(0.5)(price) AS median,
+                quantileExact(0.75)(price) - quantileExact(0.25)(price) AS iqr,
+                sumKahan(quantity) AS volume,
+                avg(is_buyer_maker) AS maker_ratio,
+                count() AS no_of_trades,
+                argMin(price * quantity, trade_id) AS open_liquidity,
+                max(price * quantity) AS high_liquidity,
+                min(price * quantity) AS low_liquidity,
+                argMax(price * quantity, trade_id) AS close_liquidity,
+                sum(price * quantity) AS liquidity_sum,
+                sumKahan(is_buyer_maker * quantity) AS maker_volume,
+                sum(is_buyer_maker * price * quantity) AS maker_liquidity
+            FROM (
+                SELECT
+                    *,
+                    toUInt64(floor(running_quote_before / 1000000.0)) AS dollar_bar_id
+                FROM (
+                    SELECT
+                        *,
+                        greatest(
+                            sum(quote_quantity) OVER (
+                                ORDER BY datetime, trade_id
+                                ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                            ) - quote_quantity,
+                            0.0
+                        ) AS running_quote_before
+                    FROM {ORIGO_DATABASE}.{origo_assets['RAW_TABLE_NAME']}
+                    WHERE toDate(datetime) = toDate('{FIXTURE_DATE}')
+                )
+            )
+            GROUP BY dollar_bar_id
+        )
         ORDER BY dollar_bar_id
         """
     )
