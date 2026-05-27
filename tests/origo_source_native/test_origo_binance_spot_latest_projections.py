@@ -295,8 +295,8 @@ def test_latest_foundation_tables_match_authoritative_time_and_dollar_sql(
     daily_dollar_rows = query_origo(
         f"""
         SELECT
-            toDateTime('{minute_text}') + (start_datetime - toDateTime('2024-01-01 00:00:00')) AS start_datetime,
-            toDateTime('{minute_text}') + (end_datetime - toDateTime('2024-01-01 00:00:00')) AS end_datetime,
+            toDateTime('{minute_text}') + (toDateTime(start_datetime) - toDateTime('2024-01-01 00:00:00')) AS start_datetime,
+            toDateTime('{minute_text}') + (toDateTime(end_datetime) - toDateTime('2024-01-01 00:00:00')) AS end_datetime,
             {', '.join(DOLLAR_KLINE_COLUMNS[2:])}
         FROM (
             SELECT
