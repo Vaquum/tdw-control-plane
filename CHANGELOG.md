@@ -1,3 +1,6 @@
+# v1.15.0 on May 27, 2026
+- Add rolling latest Binance spot trade, kline, and cut projections in Origo.
+
 # v1.14.2 on May 22, 2026
 - Require raw spot trades before replacing Binance spot dollar imbalance kline partitions.
 
