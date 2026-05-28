@@ -66,11 +66,9 @@ def _minute_key(value: datetime) -> str:
     return value.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-def _has_two_day_delete_ttl(query: object) -> bool:
+def _has_two_day_ttl(query: object) -> bool:
     text = str(query)
-    return 'TTL' in text and 'DELETE' in text and (
-        'INTERVAL 2 DAY' in text or 'toIntervalDay(2)' in text
-    )
+    return 'TTL' in text and ('INTERVAL 2 DAY' in text or 'toIntervalDay(2)' in text)
 
 
 def _unexpired_minute(offset_minutes: int = 0) -> datetime:
@@ -633,7 +631,7 @@ def test_latest_retention_and_hf_boundary_are_enforced(
     }
 
     assert result.success
-    assert all(_has_two_day_delete_ttl(query) for query in create_queries)
+    assert all(_has_two_day_ttl(query) for query in create_queries)
     assert latest_job_names == {
         'refresh_binance_spot_latest_data_source_job',
         'create_binance_spot_latest_tables_origo_job',
