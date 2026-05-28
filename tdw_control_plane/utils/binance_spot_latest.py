@@ -134,58 +134,70 @@ def _historical_trades(
     )
 
 
-def _recent_trade_id(symbol: str) -> int:
+def _aggregate_trades(
+    symbol: str, *, start_time_ms: int, limit: int
+) -> tuple[Mapping[str, object], ...]:
     response = requests.get(
-        f'{_binance_rest_base_url()}/api/v3/trades',
-        params={'symbol': symbol, 'limit': 1},
+        f'{_binance_rest_base_url()}/api/v3/aggTrades',
+        params={'symbol': symbol, 'startTime': start_time_ms, 'limit': limit},
         timeout=30,
     )
-    rows = tuple(
-        _parse_historical_trade(item) for item in _trade_items(_response_payload(response))
-    )
-    if len(rows) != 1:
-        raise RuntimeError('Binance recent-trades endpoint must return one row.')
-    return rows[0].trade_id
+    return tuple(_trade_items(_response_payload(response)))
 
 
 def _first_trade_id_at_or_after(symbol: str, target_timestamp_ms: int) -> int:
-    low = 0
-    high = _recent_trade_id(symbol)
-    candidate = high + 1
+    rows = _aggregate_trades(symbol, start_time_ms=target_timestamp_ms, limit=1)
+    if len(rows) != 1:
+        raise RuntimeError('Binance aggregate-trades endpoint must return one row.')
 
-    while low <= high:
-        midpoint = (low + high) // 2
-        rows = _historical_trades(symbol, from_id=midpoint, limit=1)
-        if not rows:
-            raise RuntimeError(f'No Binance trade returned at or after id {midpoint}.')
-
-        trade = rows[0]
-        if trade.timestamp >= target_timestamp_ms:
-            candidate = trade.trade_id
-            high = midpoint - 1
-        else:
-            low = trade.trade_id + 1
-
-    return candidate
+    row = rows[0]
+    aggregate_timestamp = _required_int(row, 'T')
+    first_trade_id = _required_int(row, 'f')
+    last_trade_id = _required_int(row, 'l')
+    if aggregate_timestamp < target_timestamp_ms:
+        raise RuntimeError('Binance aggregate trade starts before requested timestamp.')
+    if last_trade_id < first_trade_id:
+        raise RuntimeError('Binance aggregate trade id range is invalid.')
+    return first_trade_id
 
 
-def _fetch_trade_range(
+def fetch_historical_trades_in_time_range(
     symbol: str,
-    *,
-    start_trade_id: int,
-    end_trade_id: int,
+    start: datetime,
+    end: datetime,
 ) -> tuple[BinanceHistoricalTrade, ...]:
-    rows: list[BinanceHistoricalTrade] = []
-    next_trade_id = start_trade_id
-    while next_trade_id <= end_trade_id:
-        limit = min(BINANCE_HISTORICAL_TRADES_LIMIT, end_trade_id - next_trade_id + 1)
-        page = _historical_trades(symbol, from_id=next_trade_id, limit=limit)
-        if not page:
-            raise RuntimeError(f'No Binance trades returned from id {next_trade_id}.')
-        rows.extend(page)
-        next_trade_id = page[-1].trade_id + 1
+    start_ms = _millis(start)
+    end_ms = _millis(end)
+    if end_ms <= start_ms:
+        raise ValueError('Binance spot time range end must be after start.')
 
-    return tuple(row for row in rows if start_trade_id <= row.trade_id <= end_trade_id)
+    rows: list[BinanceHistoricalTrade] = []
+    start_trade_id = _first_trade_id_at_or_after(symbol, start_ms)
+    next_trade_id = start_trade_id
+    reached_end = False
+    while not reached_end:
+        page = _historical_trades(
+            symbol,
+            from_id=next_trade_id,
+            limit=BINANCE_HISTORICAL_TRADES_LIMIT,
+        )
+        if not page:
+            if rows:
+                break
+            raise RuntimeError(f'No Binance trades returned from id {next_trade_id}.')
+
+        for trade in page:
+            if trade.timestamp >= end_ms:
+                reached_end = True
+                break
+            if trade.timestamp >= start_ms:
+                rows.append(trade)
+
+        next_trade_id = page[-1].trade_id + 1
+        if len(page) < BINANCE_HISTORICAL_TRADES_LIMIT:
+            reached_end = True
+
+    return tuple(rows)
 
 
 def _validate_closed_minute_batch(
@@ -225,17 +237,16 @@ def fetch_closed_minute_trades(
     if minute_end_ms - minute_start_ms != 60_000:
         raise ValueError('Latest Binance spot fetch requires exactly one closed minute.')
 
-    start_trade_id = _first_trade_id_at_or_after(symbol, minute_start_ms)
-    first_after_minute_id = _first_trade_id_at_or_after(symbol, minute_end_ms)
-    end_trade_id = first_after_minute_id - 1
-    if end_trade_id < start_trade_id:
+    rows = fetch_historical_trades_in_time_range(
+        symbol=symbol,
+        start=minute_start,
+        end=minute_end,
+    )
+    if not rows:
         raise RuntimeError('Closed-minute Binance trade id range is empty.')
 
-    rows = _fetch_trade_range(
-        symbol,
-        start_trade_id=start_trade_id,
-        end_trade_id=end_trade_id,
-    )
+    start_trade_id = rows[0].trade_id
+    end_trade_id = rows[-1].trade_id
     _validate_closed_minute_batch(
         rows,
         start_trade_id=start_trade_id,

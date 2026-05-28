@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime, timedelta
 
 import pytest
 from dagster import DefaultScheduleStatus, build_schedule_context, materialize
 
+from tdw_control_plane.utils import binance_spot_latest as latest_utils
 from tdw_control_plane.utils.binance_spot_latest import (
     BinanceHistoricalTrade,
     LatestTradeBatch,
     LatestTradeIdBounds,
+    fetch_closed_minute_trades,
+    fetch_historical_trades_in_time_range,
 )
 
 from .helpers import ORIGO_DATABASE, load_expected_trade_rows
@@ -63,6 +66,13 @@ def _minute_key(value: datetime) -> str:
     return value.strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
+def _has_two_day_delete_ttl(query: object) -> bool:
+    text = str(query)
+    return 'TTL' in text and 'DELETE' in text and (
+        'INTERVAL 2 DAY' in text or 'toIntervalDay(2)' in text
+    )
+
+
 def _unexpired_minute(offset_minutes: int = 0) -> datetime:
     base = datetime.now(UTC).replace(second=0, microsecond=0) - timedelta(hours=1)
     return base + timedelta(minutes=offset_minutes)
@@ -108,6 +118,94 @@ def _fixture_latest_batch(minute_start: datetime) -> LatestTradeBatch:
     )
 
 
+def _spot_trade_payload(row: tuple[object, ...]) -> dict[str, object]:
+    trade_id, price, quantity, quote_quantity, _timestamp, maker, best_match, dt = row
+    assert isinstance(trade_id, int)
+    assert isinstance(price, float)
+    assert isinstance(quantity, float)
+    assert isinstance(quote_quantity, float)
+    assert isinstance(maker, int)
+    assert isinstance(best_match, int)
+    assert isinstance(dt, datetime)
+    return {
+        'id': trade_id,
+        'price': str(price),
+        'qty': str(quantity),
+        'quoteQty': str(quote_quantity),
+        'time': int(dt.replace(tzinfo=UTC).timestamp() * 1000),
+        'isBuyerMaker': bool(maker),
+        'isBestMatch': bool(best_match),
+    }
+
+
+def _aggregate_trade_payload(row: tuple[object, ...]) -> dict[str, object]:
+    trade_id, price, quantity, _quote_quantity, _timestamp, maker, best_match, dt = row
+    assert isinstance(trade_id, int)
+    assert isinstance(price, float)
+    assert isinstance(quantity, float)
+    assert isinstance(maker, int)
+    assert isinstance(best_match, int)
+    assert isinstance(dt, datetime)
+    return {
+        'a': trade_id,
+        'p': str(price),
+        'q': str(quantity),
+        'f': trade_id,
+        'l': trade_id,
+        'T': int(dt.replace(tzinfo=UTC).timestamp() * 1000),
+        'm': bool(maker),
+        'M': bool(best_match),
+    }
+
+
+class _FakeBinanceResponse:
+    def __init__(self, payload: object) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        if isinstance(self._payload, dict) and self._payload.get('status') == 'error':
+            raise RuntimeError('Fake Binance response failed.')
+
+    def json(self) -> object:
+        return self._payload
+
+
+class _FixtureBinanceApi:
+    def __init__(
+        self,
+        *,
+        aggregate_rows: list[dict[str, object]],
+        historical_rows: list[dict[str, object]],
+    ) -> None:
+        self._aggregate_rows = aggregate_rows
+        self._historical_rows = historical_rows
+        self.requests: list[tuple[str, dict[str, object]]] = []
+
+    def get(
+        self,
+        url: str,
+        *,
+        params: Mapping[str, object],
+        headers: Mapping[str, str] | None = None,
+        timeout: int,
+    ) -> _FakeBinanceResponse:
+        del headers, timeout
+        endpoint = url.rsplit('/api/v3/', maxsplit=1)[1]
+        request_params = dict(params)
+        self.requests.append((endpoint, request_params))
+        if endpoint == 'aggTrades':
+            return _FakeBinanceResponse(self._aggregate_rows[:1])
+        if endpoint != 'historicalTrades':
+            raise AssertionError(f'Unexpected Binance endpoint {endpoint}')
+
+        from_id = request_params['fromId']
+        limit = request_params['limit']
+        assert isinstance(from_id, int)
+        assert isinstance(limit, int)
+        rows = [row for row in self._historical_rows if row['id'] >= from_id]
+        return _FakeBinanceResponse(rows[:limit])
+
+
 def _install_fixture_fetch(
     monkeypatch: pytest.MonkeyPatch,
     origo_assets: dict[str, object],
@@ -143,6 +241,108 @@ def _evaluate_latest_schedule(origo_definitions_module: object, scheduled_time: 
     )
     schedule_def = repository_def.get_schedule_def('binance_spot_latest_1m_schedule')
     return schedule_def.evaluate_tick(context).run_requests
+
+
+def test_latest_trade_fetch_uses_aggtrade_start_and_forward_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_rows = load_expected_trade_rows(FIXTURE_DATE)
+    api = _FixtureBinanceApi(
+        aggregate_rows=[_aggregate_trade_payload(fixture_rows[0])],
+        historical_rows=[_spot_trade_payload(row) for row in fixture_rows],
+    )
+    monkeypatch.setattr(latest_utils.requests, 'get', api.get)
+    monkeypatch.setattr(latest_utils, 'BINANCE_HISTORICAL_TRADES_LIMIT', 2)
+
+    batch = fetch_closed_minute_trades(
+        'BTCUSDT',
+        datetime(2024, 1, 1, tzinfo=UTC),
+        datetime(2024, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert [endpoint for endpoint, _params in api.requests] == [
+        'aggTrades',
+        'historicalTrades',
+        'historicalTrades',
+    ]
+    assert api.requests[0][1] == {
+        'symbol': 'BTCUSDT',
+        'startTime': 1704067200000,
+        'limit': 1,
+    }
+    assert [request[1]['fromId'] for request in api.requests[1:]] == [1001, 1003]
+    assert [request[1]['limit'] for request in api.requests[1:]] == [2, 2]
+    assert [row.trade_id for row in batch.rows] == [1001, 1002, 1003]
+    assert batch.bounds.start_trade_id == 1001
+    assert batch.bounds.end_trade_id == 1003
+
+
+def test_latest_trade_range_is_half_open_when_next_trade_is_after_end(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    next_day_rows = load_expected_trade_rows('2024-01-02')
+    api = _FixtureBinanceApi(
+        aggregate_rows=[_aggregate_trade_payload(next_day_rows[0])],
+        historical_rows=[_spot_trade_payload(row) for row in next_day_rows],
+    )
+    monkeypatch.setattr(latest_utils.requests, 'get', api.get)
+
+    rows = fetch_historical_trades_in_time_range(
+        'BTCUSDT',
+        datetime(2024, 1, 1, tzinfo=UTC),
+        datetime(2024, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert rows == ()
+    assert [endpoint for endpoint, _params in api.requests] == [
+        'aggTrades',
+        'historicalTrades',
+    ]
+
+
+def test_latest_trade_range_finishes_when_historical_endpoint_is_exhausted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_rows = load_expected_trade_rows(FIXTURE_DATE)[:2]
+    api = _FixtureBinanceApi(
+        aggregate_rows=[_aggregate_trade_payload(fixture_rows[0])],
+        historical_rows=[_spot_trade_payload(row) for row in fixture_rows],
+    )
+    monkeypatch.setattr(latest_utils.requests, 'get', api.get)
+    monkeypatch.setattr(latest_utils, 'BINANCE_HISTORICAL_TRADES_LIMIT', 2)
+
+    rows = fetch_historical_trades_in_time_range(
+        'BTCUSDT',
+        datetime(2024, 1, 1, tzinfo=UTC),
+        datetime(2024, 1, 1, 0, 1, tzinfo=UTC),
+    )
+
+    assert [row.trade_id for row in rows] == [1001, 1002]
+    assert [endpoint for endpoint, _params in api.requests] == [
+        'aggTrades',
+        'historicalTrades',
+        'historicalTrades',
+    ]
+    assert [request[1]['fromId'] for request in api.requests[1:]] == [1001, 1003]
+
+
+def test_latest_closed_minute_still_rejects_non_contiguous_trade_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture_rows = load_expected_trade_rows(FIXTURE_DATE)
+    gapped_rows = [fixture_rows[0], fixture_rows[2]]
+    api = _FixtureBinanceApi(
+        aggregate_rows=[_aggregate_trade_payload(gapped_rows[0])],
+        historical_rows=[_spot_trade_payload(row) for row in gapped_rows],
+    )
+    monkeypatch.setattr(latest_utils.requests, 'get', api.get)
+
+    with pytest.raises(RuntimeError, match='not contiguous'):
+        fetch_closed_minute_trades(
+            'BTCUSDT',
+            datetime(2024, 1, 1, tzinfo=UTC),
+            datetime(2024, 1, 1, 0, 1, tzinfo=UTC),
+        )
 
 
 def test_latest_trade_ingest_requires_exact_closed_minute_id_range(
@@ -433,9 +633,7 @@ def test_latest_retention_and_hf_boundary_are_enforced(
     }
 
     assert result.success
-    assert all(
-        'TTL' in str(query) and 'INTERVAL 2 DAY DELETE' in str(query) for query in create_queries
-    )
+    assert all(_has_two_day_delete_ttl(query) for query in create_queries)
     assert latest_job_names == {
         'refresh_binance_spot_latest_data_source_job',
         'create_binance_spot_latest_tables_origo_job',
