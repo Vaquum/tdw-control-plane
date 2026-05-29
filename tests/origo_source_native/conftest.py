@@ -285,6 +285,24 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     reconcile_binance_spot_depth20_partition_state_origo_module = _reload_module(
         'tdw_control_plane.assets.reconcile_binance_spot_depth20_partition_state_origo'
     )
+    create_binance_spot_latest_tables_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_latest_tables_origo'
+    )
+    sync_binance_spot_trades_latest_origo_module = _reload_module(
+        'tdw_control_plane.assets.sync_binance_spot_trades_latest_origo'
+    )
+    refresh_binance_spot_klines_latest_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_klines_latest_origo'
+    )
+    refresh_binance_spot_dollar_klines_latest_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_dollar_klines_latest_origo'
+    )
+    refresh_binance_spot_latest_cuts_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_latest_cuts_origo'
+    )
+    cleanup_binance_spot_latest_origo_module = _reload_module(
+        'tdw_control_plane.assets.cleanup_binance_spot_latest_origo'
+    )
 
     return {
         'create_origo_database': create_origo_database_module.create_origo_database,
@@ -405,6 +423,40 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         'DEPTH20_1M_TABLE_NAME': (
             create_binance_spot_depth20_1m_table_origo_module.DEPTH20_1M_TABLE_NAME
         ),
+        'create_binance_spot_latest_tables_origo': (
+            create_binance_spot_latest_tables_origo_module.create_binance_spot_latest_tables_origo
+        ),
+        'sync_binance_spot_trades_latest_origo': (
+            sync_binance_spot_trades_latest_origo_module.sync_binance_spot_trades_latest_origo
+        ),
+        'refresh_binance_spot_klines_latest_origo': (
+            refresh_binance_spot_klines_latest_origo_module.refresh_binance_spot_klines_latest_origo
+        ),
+        'refresh_binance_spot_dollar_klines_latest_origo': (
+            refresh_binance_spot_dollar_klines_latest_origo_module.refresh_binance_spot_dollar_klines_latest_origo
+        ),
+        'refresh_binance_spot_latest_cuts_origo': (
+            refresh_binance_spot_latest_cuts_origo_module.refresh_binance_spot_latest_cuts_origo
+        ),
+        'cleanup_binance_spot_latest_origo': (
+            cleanup_binance_spot_latest_origo_module.cleanup_binance_spot_latest_origo
+        ),
+        'create_binance_spot_latest_tables_origo_module': (
+            create_binance_spot_latest_tables_origo_module
+        ),
+        'sync_binance_spot_trades_latest_origo_module': (
+            sync_binance_spot_trades_latest_origo_module
+        ),
+        'refresh_binance_spot_klines_latest_origo_module': (
+            refresh_binance_spot_klines_latest_origo_module
+        ),
+        'refresh_binance_spot_dollar_klines_latest_origo_module': (
+            refresh_binance_spot_dollar_klines_latest_origo_module
+        ),
+        'refresh_binance_spot_latest_cuts_origo_module': (
+            refresh_binance_spot_latest_cuts_origo_module
+        ),
+        'cleanup_binance_spot_latest_origo_module': cleanup_binance_spot_latest_origo_module,
     }
 
 
@@ -460,6 +512,28 @@ def materialize_binance_spot_dollar_klines_assets(
                 origo_assets['refresh_binance_spot_dollar_klines_origo'],
             ],
             partition_key=partition_key,
+        )
+
+    return _run
+
+
+@pytest.fixture()
+def materialize_binance_spot_latest_assets(
+    origo_assets: dict[str, object],
+) -> object:
+    def _run(*, minute_start: str) -> object:
+        return materialize(
+            [
+                origo_assets['create_origo_database'],
+                origo_assets['create_binance_spot_latest_tables_origo'],
+                origo_assets['sync_binance_spot_trades_latest_origo'],
+                origo_assets['refresh_binance_spot_klines_latest_origo'],
+                origo_assets['refresh_binance_spot_dollar_klines_latest_origo'],
+                origo_assets['refresh_binance_spot_latest_cuts_origo'],
+            ],
+            tags={
+                'binance_spot_latest_minute_start': minute_start,
+            },
         )
 
     return _run
@@ -573,8 +647,6 @@ def materialize_spot_and_futures_data_source_assets(
         return spot_result, futures_result
 
     return _run
-
-
 
 
 @pytest.fixture()
