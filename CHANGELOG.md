@@ -1,3 +1,6 @@
+# v1.15.1 on May 30, 2026
+- Include latest Binance spot table creation in the scheduled latest data-source job.
+
 # v1.15.0 on May 27, 2026
 - Add rolling latest Binance spot trade, kline, and cut projections in Origo.
 

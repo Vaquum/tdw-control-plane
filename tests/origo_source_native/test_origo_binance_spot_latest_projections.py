@@ -394,6 +394,7 @@ def test_latest_schedule_requests_last_closed_minute_once_per_minute(
     assert resolved_schedule_def.execution_timezone == 'UTC'
     assert resolved_schedule_def.default_status == DefaultScheduleStatus.RUNNING
     assert node_names == {
+        'create_binance_spot_latest_tables_origo',
         'sync_binance_spot_trades_latest_origo',
         'refresh_binance_spot_klines_latest_origo',
         'refresh_binance_spot_dollar_klines_latest_origo',
