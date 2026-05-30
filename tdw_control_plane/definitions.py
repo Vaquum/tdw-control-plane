@@ -331,6 +331,7 @@ refresh_binance_spot_depth20_data_source_job = define_asset_job(
 refresh_binance_spot_latest_data_source_job = define_asset_job(
     name='refresh_binance_spot_latest_data_source_job',
     selection=[
+        'create_binance_spot_latest_tables_origo',
         'sync_binance_spot_trades_latest_origo',
         'refresh_binance_spot_klines_latest_origo',
         'refresh_binance_spot_dollar_klines_latest_origo',
