@@ -1,3 +1,6 @@
+# v1.15.2 on June 4, 2026
+- Route Hugging Face Binance spot time-kline exports through the Origo 1m kline projection.
+
 # v1.15.1 on May 30, 2026
 - Include latest Binance spot table creation in the scheduled latest data-source job.
 
