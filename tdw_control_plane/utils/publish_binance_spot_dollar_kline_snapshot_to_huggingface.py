@@ -173,8 +173,12 @@ def _get_binance_spot_dollar_klines(
         arrow_table = client.query_arrow(
             f"""
             SELECT
-                min(source_start_datetime) AS start_datetime,
-                max(source_end_datetime) AS end_datetime,
+                -- toDateTime64(_, 3): emit ms-precision so polars >=1.40 from_arrow keeps the
+                -- value. A plain min()/max() on these DateTime columns arrives as epoch seconds
+                -- and the Datetime("ms") cast below would reinterpret it as ms, collapsing every
+                -- timestamp to ~1970 (the same guard dollar_month uses in binance_spot_kline_rollups).
+                toDateTime64(min(source_start_datetime), 3) AS start_datetime,
+                toDateTime64(max(source_end_datetime), 3) AS end_datetime,
                 target_dollar_bar_id AS dollar_bar_id,
                 argMin(source_open, tuple(source_start_datetime, source_dollar_bar_id)) AS open,
                 max(source_high) AS high,

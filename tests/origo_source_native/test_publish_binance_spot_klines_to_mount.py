@@ -182,10 +182,11 @@ def test_dollar_month_rollup_matches_hf_day_scoped(origo_assets: dict[str, Any])
     )
 
     assert actual.height > 0
-    # Values must match the HF day-scoped aggregation exactly. Datetimes are compared by range,
-    # not equality: the HF arrow path mis-scales second-precision timestamps under polars >=1.40,
-    # so dollar_month keeps the columns in millisecond precision (correct) instead.
-    assert_frame_equal(actual.drop(_DATETIME_COLUMNS), expected.drop(_DATETIME_COLUMNS))
+    # dollar_month and the HF dollar export now share identical timestamp handling
+    # (toDateTime64(_, 3) -> Datetime("ms", "UTC")), so the full frames match -- including the
+    # datetime columns that previously had to be dropped while the HF export mis-scaled
+    # second-precision timestamps to ~1970 under polars >=1.40.
+    assert_frame_equal(actual, expected)
     assert JANUARY_2024 <= actual["start_datetime"].min() < FEBRUARY_2024
     assert JANUARY_2024 <= actual["end_datetime"].max() < FEBRUARY_2024
 
