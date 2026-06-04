@@ -17,12 +17,15 @@ from dagster import (
     AssetKey,
     DefaultScheduleStatus,
     Definitions,
+    RunConfig,
     RunRequest,
+    ScheduleDefinition,
     ScheduleEvaluationContext,
     SkipReason,
     asset_sensor,
     build_schedule_from_partitioned_job,
     define_asset_job,
+    in_process_executor,
     schedule,
 )
 
@@ -169,6 +172,11 @@ from .assets.refresh_binance_spot_latest_cuts_origo import (
     refresh_binance_spot_latest_cuts_origo,
 )
 from .assets.cleanup_binance_spot_latest_origo import cleanup_binance_spot_latest_origo
+from .assets.publish_binance_spot_klines_to_mount import (
+    MOUNT_EXPORT_ASSETS,
+    SPECS as MOUNT_EXPORT_SPECS,
+    MountExportConfig,
+)
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -401,6 +409,34 @@ publish_binance_spot_120M_dollar_klines_to_huggingface_job = define_asset_job(
 publish_binance_spot_240M_dollar_klines_to_huggingface_job = define_asset_job(
     name="publish_binance_spot_240M_dollar_klines_to_huggingface_job",
     selection=["publish_binance_spot_240M_dollar_klines_to_huggingface"])
+
+# Local Parquet Mirror Jobs
+
+publish_binance_spot_klines_to_mount_job = define_asset_job(
+    name="publish_binance_spot_klines_to_mount_job",
+    selection=MOUNT_EXPORT_ASSETS,
+    executor_def=in_process_executor,
+)
+
+backfill_binance_spot_klines_to_mount_job = define_asset_job(
+    name="backfill_binance_spot_klines_to_mount_job",
+    selection=MOUNT_EXPORT_ASSETS,
+    executor_def=in_process_executor,
+    config=RunConfig(
+        ops={
+            f"export_{spec.name}_to_mount": MountExportConfig(mode="backfill")
+            for spec in MOUNT_EXPORT_SPECS
+        }
+    ),
+)
+
+publish_binance_spot_klines_to_mount_schedule = ScheduleDefinition(
+    name="publish_binance_spot_klines_to_mount_schedule",
+    job=publish_binance_spot_klines_to_mount_job,
+    cron_schedule="*/10 * * * *",
+    execution_timezone="UTC",
+    default_status=DefaultScheduleStatus.RUNNING,
+)
 
 insert_monthly_binance_agg_trades_job = define_asset_job(
     name="insert_monthly_agg_trades_to_tdw_job",
@@ -983,6 +1019,7 @@ defs = Definitions(
             publish_binance_spot_60M_dollar_klines_to_huggingface,
             publish_binance_spot_120M_dollar_klines_to_huggingface,
             publish_binance_spot_240M_dollar_klines_to_huggingface,
+            *MOUNT_EXPORT_ASSETS,
             cleanup_binance_daily_trades_for_finalized_month,
             create_binance_trades_monthly_summary,
             create_binance_trades_daily_summary,
@@ -1005,6 +1042,7 @@ defs = Definitions(
         binance_spot_latest_1m_schedule,
         daily_tdw_pipeline_schedule,
         monthly_tdw_rollforward_schedule,
+        publish_binance_spot_klines_to_mount_schedule,
     ],
 
     sensors=[
@@ -1061,6 +1099,8 @@ defs = Definitions(
           publish_binance_spot_60M_dollar_klines_to_huggingface_job,
           publish_binance_spot_120M_dollar_klines_to_huggingface_job,
           publish_binance_spot_240M_dollar_klines_to_huggingface_job,
+          publish_binance_spot_klines_to_mount_job,
+          backfill_binance_spot_klines_to_mount_job,
           roll_forward_monthly_binance_trades_job,
           create_binance_trades_monthly_summary_job,
           create_binance_trades_daily_summary_job,
