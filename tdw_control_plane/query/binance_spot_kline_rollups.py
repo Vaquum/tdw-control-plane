@@ -399,3 +399,46 @@ def dollar_month(
         pl.col("liquidity_sum").round(1),
         pl.col("maker_liquidity").round(1),
     ]).sort(["start_datetime", "dollar_bar_id"])
+
+
+def dollar_open_day_gap_days(
+    *,
+    base_table: str = "binance_spot_dollar_klines",
+    raw_latest_table: str = "binance_spot_trades_latest",
+    database: str = "origo",
+) -> int:
+    """Days after the dollar base watermark that the rolling raw table cannot cover.
+
+    Returns 0 in steady state (the open day is within the raw 2-day window). A
+    positive value means refresh_binance_spot_dollar_klines_origo has stalled past
+    that window, so those days are absent from BOTH the base and the rolling raw and
+    the month file develops a hole -- meant to be surfaced as a warning rather than a
+    silent gap. (Reported only for a non-empty base, so a fresh deploy is not flagged.)
+    """
+    base_table = _validate_identifier(base_table, "table name")
+    raw_latest_table = _validate_identifier(raw_latest_table, "table name")
+    database = _validate_identifier(database, "database name")
+
+    query = f"""
+        SELECT toInt64(
+            if(
+                base_day >= toDate('2017-08-01') AND raw_min_open > base_day,
+                greatest(dateDiff('day', base_day, raw_min_open) - 1, 0),
+                0
+            )
+        ) AS gap_days
+        FROM (
+            SELECT
+                (SELECT max(toDate(start_datetime)) FROM {database}.{base_table}) AS base_day,
+                (
+                    SELECT min(toDate(datetime))
+                    FROM {database}.{raw_latest_table}
+                    WHERE toDate(datetime) > (SELECT max(toDate(start_datetime)) FROM {database}.{base_table})
+                ) AS raw_min_open
+        )
+        """
+    arrow_table = _run_arrow(query, {})
+    value = cast(pl.DataFrame, pl.from_arrow(arrow_table)).item()
+    if value is None:
+        return 0
+    return int(value)

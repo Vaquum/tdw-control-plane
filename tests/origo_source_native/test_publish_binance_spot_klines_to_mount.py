@@ -122,6 +122,42 @@ def test_time_month_rollup_matches_hf_projection(origo_assets: dict[str, Any]) -
     assert_frame_equal(actual, expected)
 
 
+def test_time_month_splices_base_and_rolling_latest(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[object, ...]]],
+) -> None:
+    # base holds day 1 + day 2; capture the canonical both-days aggregation
+    _materialize_time_base(origo_assets, "2024-01-01", "2024-01-02")
+    expected = _hf_time_projection()(
+        kline_size_seconds=900,
+        start_date_limit=JANUARY_2024_START,
+        end_date_limit=FEBRUARY_2024_START,
+        table_name="binance_spot_klines",
+        database_name=ORIGO_DATABASE,
+    )
+
+    # move day 2 into the rolling-latest table and drop it from the base, so day 2 can
+    # only appear in the rollup via the base_cut UNION latest splice. (REMOVE TTL first:
+    # the rolling table TTLs rows older than 2 days and the fixture is from 2024.)
+    query_origo("ALTER TABLE binance_spot_klines_latest REMOVE TTL")
+    query_origo(
+        "INSERT INTO binance_spot_klines_latest "
+        "SELECT * FROM binance_spot_klines WHERE toDate(datetime) = toDate('2024-01-02')"
+    )
+    query_origo(
+        "ALTER TABLE binance_spot_klines DELETE "
+        "WHERE toDate(datetime) = toDate('2024-01-02') SETTINGS mutations_sync = 2"
+    )
+
+    actual = time_month(interval_minutes=15, year=2024, month=1)
+
+    # the splice reconstructs the full month from base(day 1) + latest(day 2)
+    assert_frame_equal(actual, expected)
+    # day 2 is present only via the latest branch, and the seam has no duplicate interval
+    assert actual["datetime"].max() >= JANUARY_2_2024
+    assert actual["datetime"].n_unique() == actual.height
+
+
 def test_dollar_month_rollup_matches_hf_day_scoped(origo_assets: dict[str, Any]) -> None:
     result = materialize(
         [

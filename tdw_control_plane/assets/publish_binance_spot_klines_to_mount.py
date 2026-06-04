@@ -8,6 +8,7 @@ file with staler data (atomic != monotonic). A separate ``backfill`` mode
 rebuilds every month from 2020-01 for the initial fill or after a gap.
 """
 
+import fcntl
 import os
 import time
 import uuid
@@ -19,7 +20,11 @@ from typing import Literal
 import polars as pl
 from dagster import AssetExecutionContext, AssetsDefinition, Config, asset
 
-from tdw_control_plane.query.binance_spot_kline_rollups import dollar_month, time_month
+from tdw_control_plane.query.binance_spot_kline_rollups import (
+    dollar_month,
+    dollar_open_day_gap_days,
+    time_month,
+)
 
 DEFAULT_MOUNT_DIR = "/opt/parquet"
 EXPORT_START_YEAR = 2020
@@ -52,7 +57,9 @@ SPECS: tuple[MountKlineSpec, ...] = (
 
 
 class MountExportConfig(Config):
-    mode: str = "tick"  # "tick" -> open month(s); "backfill" -> every month from 2020-01
+    # "tick" -> open month(s); "backfill" -> every month from 2020-01.
+    # Literal so Dagster/pydantic validates the value at launch time.
+    mode: Literal["tick", "backfill"] = "tick"
     dry_run: bool = False
 
 
@@ -124,8 +131,10 @@ def _clear_orphan_temp_files(directory: Path, month: int) -> None:
 
 
 def write_month_atomic(df: pl.DataFrame, spec: MountKlineSpec, year: int, month: int) -> str:
-    """Write a month file atomically (temp in same dir -> os.replace), but skip
-    the replace when the existing file already holds data at least as fresh.
+    """Write a month file atomically (temp in same dir -> os.replace), skipping the
+    replace when the existing file already holds data at least as fresh. A per-month
+    file lock serializes the freshness check and the replace, so overlapping ticks
+    cannot race and regress freshness (staler-over-fresher).
     Returns ``written``, ``skipped_empty``, or ``skipped_not_newer``."""
     if df.height == 0:
         return "skipped_empty"
@@ -137,17 +146,23 @@ def write_month_atomic(df: pl.DataFrame, spec: MountKlineSpec, year: int, month:
 
     target = month_path(spec.sub_path, year, month)
     target.parent.mkdir(parents=True, exist_ok=True)
-
-    if target.exists():
-        existing_max = _existing_max_timestamp(target, column)
-        if existing_max is not None and existing_max >= new_max:
-            return "skipped_not_newer"
-
     _clear_orphan_temp_files(target.parent, month)
     tmp = target.parent / f".{month:02d}.parquet.partial-{os.getpid()}-{uuid.uuid4().hex}"
     df.write_parquet(tmp, compression="zstd")
-    os.replace(tmp, target)
-    return "written"
+
+    # Hold a per-month lock across the check-and-replace so two overlapping ticks
+    # cannot both read the same stale max and race the replace. The temp write above
+    # stays outside the lock.
+    lock_path = target.parent / f".{month:02d}.parquet.lock"
+    with open(lock_path, "w", encoding="utf-8") as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        if target.exists():
+            existing_max = _existing_max_timestamp(target, column)
+            if existing_max is not None and existing_max >= new_max:
+                tmp.unlink()
+                return "skipped_not_newer"
+        os.replace(tmp, target)
+        return "written"
 
 
 def run_mount_export(
@@ -155,6 +170,17 @@ def run_mount_export(
 ) -> dict[str, object]:
     now = datetime.now(UTC)
     months = months_for_run(config.mode, now)
+
+    if spec.family == "dollar" and not config.dry_run:
+        gap_days = dollar_open_day_gap_days()
+        if gap_days > 0:
+            context.log.warning(
+                f"{spec.name}: the dollar base is {gap_days} day(s) behind what the 2-day "
+                "rolling raw table can cover; those days are absent from both sources, so the "
+                "affected month file will have a hole until refresh_binance_spot_dollar_klines_origo "
+                "catches up or a backfill is run."
+            )
+
     results: dict[str, str] = {}
     for year, month in months:
         key = f"{year:04d}-{month:02d}"
