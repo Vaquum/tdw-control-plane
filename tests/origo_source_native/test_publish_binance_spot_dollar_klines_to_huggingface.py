@@ -3,7 +3,7 @@ from __future__ import annotations
 import importlib
 import json
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
@@ -203,6 +203,40 @@ def test_dollar_kline_query_rejects_unsafe_sql_inputs(
             table_name='binance_spot_dollar_klines',
             database_name='origo',
         )
+
+
+def test_dollar_kline_export_preserves_clickhouse_timestamp_scale(
+    materialize_binance_spot_dollar_klines_assets: Callable[..., object],
+) -> None:
+    """Regression for the polars >=1.40 timestamp collapse.
+
+    ClickHouse ``DateTime`` columns come back from clickhouse-connect as second-precision
+    Arrow timestamps that ``pl.from_arrow`` no longer rescales on polars >=1.40, so a plain
+    ``min()``/``max()`` arrives as epoch seconds and the export's ``cast(Datetime("ms"))``
+    reinterprets them as milliseconds -- collapsing every dollar bar to ~1970-01-19. The
+    export emits ``toDateTime64(_, 3)`` so the real dates survive the arrow round-trip.
+    """
+    result = materialize_binance_spot_dollar_klines_assets(partition_key='2024-01-01')
+    assert result.success
+
+    publish_helper_module = importlib.import_module(
+        'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
+    )
+    data = publish_helper_module._get_binance_spot_dollar_klines(
+        dollar_size=1_000_000.0,
+        start_date_limit='2020-01-01 00:00:00',
+        end_date_limit='2024-02-01 00:00:00',
+        table_name='binance_spot_dollar_klines',
+        database_name=ORIGO_DATABASE,
+    )
+
+    assert data.height > 0
+    assert data['start_datetime'].dtype == pl.Datetime('ms', time_zone='UTC')
+    assert data['end_datetime'].dtype == pl.Datetime('ms', time_zone='UTC')
+    # The fixture covers 2024-01-01 only; the bug would have parked every timestamp on
+    # ~1970-01-19. Assert the real day survived rather than merely "not epoch".
+    assert data['start_datetime'].min() >= datetime(2024, 1, 1, tzinfo=UTC)
+    assert data['end_datetime'].max() < datetime(2024, 1, 2, tzinfo=UTC)
 
 
 def _origo_dollar_klines_dataframe(

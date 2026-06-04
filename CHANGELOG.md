@@ -1,3 +1,6 @@
+# v1.16.1 on June 4, 2026
+- Fix Binance spot dollar-kline Hugging Face exports collapsing every timestamp to ~1970 under polars >=1.40 by emitting millisecond-precision DateTime64 so the Arrow round-trip preserves the real dates.
+
 # v1.16.0 on June 4, 2026
 - Add a 10-minute stateless job mirroring the 12 Binance spot kline series to monthly Parquet files on a local mount.
 
