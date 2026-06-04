@@ -32,7 +32,7 @@ KLINE_EXPORT_COLUMNS = [
 ]
 
 
-def _origo_trades_1h_kline_dataframe(
+def _origo_projection_1h_kline_dataframe(
     query_origo: Callable[[str], list[tuple[object, ...]]],
     *,
     database_name: str,
@@ -44,25 +44,50 @@ def _origo_trades_1h_kline_dataframe(
         f"""
         SELECT
             kline_datetime AS datetime,
-            argMin(price, trade_id) AS open,
-            max(price) AS high,
-            min(price) AS low,
-            argMax(price, trade_id) AS close,
-            round(avg(price), 5) AS mean,
-            round(stddevPopStable(price), 6) AS std,
-            round(sumKahan(quantity), 9) AS volume,
-            avg(is_buyer_maker) AS maker_ratio,
-            count() AS no_of_trades,
-            argMin(price * quantity, trade_id) AS open_liquidity,
-            max(price * quantity) AS high_liquidity,
-            min(price * quantity) AS low_liquidity,
-            argMax(price * quantity, trade_id) AS close_liquidity,
-            round(sum(price * quantity), 1) AS liquidity_sum,
-            sumKahan(is_buyer_maker * quantity) AS maker_volume,
-            round(sum(is_buyer_maker * price * quantity), 1) AS maker_liquidity
+            argMin(source_open, source_datetime) AS open,
+            max(source_high) AS high,
+            min(source_low) AS low,
+            argMax(source_close, source_datetime) AS close,
+            round(sum(source_no_of_trades * source_mean) / sum(source_no_of_trades), 5) AS mean,
+            round(
+                sqrt(
+                    greatest(
+                        sum(source_no_of_trades * ((source_std * source_std) + (source_mean * source_mean))) / sum(source_no_of_trades)
+                        - pow(sum(source_no_of_trades * source_mean) / sum(source_no_of_trades), 2),
+                        0
+                    )
+                ),
+                6
+            ) AS std,
+            round(sumKahan(source_volume), 9) AS volume,
+            sum(source_no_of_trades * source_maker_ratio) / sum(source_no_of_trades) AS maker_ratio,
+            sum(source_no_of_trades) AS no_of_trades,
+            argMin(source_open_liquidity, source_datetime) AS open_liquidity,
+            max(source_high_liquidity) AS high_liquidity,
+            min(source_low_liquidity) AS low_liquidity,
+            argMax(source_close_liquidity, source_datetime) AS close_liquidity,
+            round(sum(source_liquidity_sum), 1) AS liquidity_sum,
+            sumKahan(source_maker_volume) AS maker_volume,
+            round(sum(source_maker_liquidity), 1) AS maker_liquidity
         FROM (
             SELECT
-                *,
+                datetime AS source_datetime,
+                open AS source_open,
+                high AS source_high,
+                low AS source_low,
+                close AS source_close,
+                mean AS source_mean,
+                std AS source_std,
+                volume AS source_volume,
+                maker_ratio AS source_maker_ratio,
+                no_of_trades AS source_no_of_trades,
+                open_liquidity AS source_open_liquidity,
+                high_liquidity AS source_high_liquidity,
+                low_liquidity AS source_low_liquidity,
+                close_liquidity AS source_close_liquidity,
+                liquidity_sum AS source_liquidity_sum,
+                maker_volume AS source_maker_volume,
+                maker_liquidity AS source_maker_liquidity,
                 toDateTime(3600 * intDiv(toUnixTimestamp(datetime), 3600)) AS kline_datetime
             FROM {database_name}.{table_name}
             WHERE datetime >= toDateTime('{start_date_limit}')
@@ -75,17 +100,17 @@ def _origo_trades_1h_kline_dataframe(
     return pl.DataFrame(rows, schema=KLINE_EXPORT_COLUMNS, orient='row')
 
 
-def test_publish_1h_sensor_targets_origo_spot_trades_materialization(
+def test_publish_1h_sensor_targets_origo_spot_kline_materialization(
     origo_definitions_module: object,
 ) -> None:
     sensor_def = (
         origo_definitions_module.publish_binance_spot_1h_klines_to_huggingface_sensor
     )
 
-    assert sensor_def.asset_key == AssetKey('insert_daily_binance_spot_trades_to_origo')
+    assert sensor_def.asset_key == AssetKey('refresh_binance_spot_klines_origo')
 
 
-def test_publish_1h_snapshot_reads_origo_spot_trades_with_shared_query(
+def test_publish_1h_snapshot_reads_origo_spot_klines_projection(
     monkeypatch: pytest.MonkeyPatch,
     materialize_binance_spot_data_source_assets: Callable[..., object],
     query_origo: Callable[[str], list[tuple[object, ...]]],
@@ -132,19 +157,21 @@ def test_publish_1h_snapshot_reads_origo_spot_trades_with_shared_query(
             uploaded['metadata'] = metadata
             uploaded['parquet'] = pl.read_parquet(folder / metadata['file_name'])
 
-    def recording_get_binance_spot_klines(**kwargs: object) -> pl.DataFrame:
+    def recording_get_binance_spot_klines_from_1m_projection(**kwargs: object) -> pl.DataFrame:
         captured_query.update(kwargs)
         database_name = kwargs.get('database_name')
         table_name = kwargs.get('table_name')
+        kline_size_seconds = kwargs.get('kline_size_seconds')
         start_date_limit = kwargs.get('start_date_limit')
         end_date_limit = kwargs.get('end_date_limit')
 
         assert database_name == ORIGO_DATABASE
-        assert table_name == 'binance_daily_spot_trades'
+        assert table_name == 'binance_spot_klines'
+        assert kline_size_seconds == 3600
         assert isinstance(start_date_limit, str)
         assert isinstance(end_date_limit, str)
 
-        return _origo_trades_1h_kline_dataframe(
+        return _origo_projection_1h_kline_dataframe(
             query_origo,
             database_name=database_name,
             table_name=table_name,
@@ -157,8 +184,8 @@ def test_publish_1h_snapshot_reads_origo_spot_trades_with_shared_query(
     monkeypatch.setattr(publish_helper_module, 'HfApi', RecordingHfApi)
     monkeypatch.setattr(
         publish_helper_module,
-        'get_binance_spot_klines',
-        recording_get_binance_spot_klines,
+        '_get_binance_spot_klines_from_1m_projection',
+        recording_get_binance_spot_klines_from_1m_projection,
     )
 
     publish_result = materialize(
@@ -181,15 +208,14 @@ def test_publish_1h_snapshot_reads_origo_spot_trades_with_shared_query(
     assert metadata['row_count'] == parquet.height
     assert parquet.columns == KLINE_EXPORT_COLUMNS
     assert captured_query == {
-        'kline_size': 3600,
+        'kline_size_seconds': 3600,
         'start_date_limit': '2020-01-01 00:00:00',
         'end_date_limit': '2024-01-02 00:00:00',
-        'table_name': 'binance_daily_spot_trades',
+        'table_name': 'binance_spot_klines',
         'database_name': 'origo',
-        'include_quantiles': False,
     }
     assert uploaded['commit_message'] == 'Add BTCUSDT 1h klines snapshot through 2024-01-01'
     assert uploaded['delete_patterns'] == ['btcusdt_1h_kline_20200101_to_*.parquet']
     assert metadata['file_name'] == 'btcusdt_1h_kline_20200101_to_20240101.parquet'
     assert '1-hour resolution' in readme
-    assert 'origo.binance_daily_spot_trades' in readme
+    assert 'origo.binance_spot_klines' in readme

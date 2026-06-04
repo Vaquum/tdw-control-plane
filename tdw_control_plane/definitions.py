@@ -766,7 +766,7 @@ def _publish_binance_spot_dollar_klines_to_hf_run_request(
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_klines_to_huggingface_job,
 )
 def publish_binance_spot_klines_to_huggingface_sensor(
@@ -780,7 +780,7 @@ def publish_binance_spot_klines_to_huggingface_sensor(
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_15m_klines_to_huggingface_job,
 )
 def publish_binance_spot_15m_klines_to_huggingface_sensor(
@@ -794,7 +794,7 @@ def publish_binance_spot_15m_klines_to_huggingface_sensor(
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_30m_klines_to_huggingface_job,
 )
 def publish_binance_spot_30m_klines_to_huggingface_sensor(
@@ -808,7 +808,7 @@ def publish_binance_spot_30m_klines_to_huggingface_sensor(
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_1h_klines_to_huggingface_job,
 )
 def publish_binance_spot_1h_klines_to_huggingface_sensor(
@@ -822,7 +822,7 @@ def publish_binance_spot_1h_klines_to_huggingface_sensor(
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_2h_klines_to_huggingface_job,
 )
 def publish_binance_spot_2h_klines_to_huggingface_sensor(
@@ -836,7 +836,7 @@ def publish_binance_spot_2h_klines_to_huggingface_sensor(
 
 
 @asset_sensor(
-    asset_key=AssetKey("insert_daily_binance_spot_trades_to_origo"),
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
     job=publish_binance_spot_4h_klines_to_huggingface_job,
 )
 def publish_binance_spot_4h_klines_to_huggingface_sensor(
