@@ -216,7 +216,9 @@ def _get_binance_spot_klines_from_1m_projection(
         return data
 
     return data.with_columns([
-        pl.col("datetime").cast(pl.Datetime("ms", time_zone="UTC")),
+        (pl.col("datetime").cast(pl.Int64) * 1000)
+        .cast(pl.Datetime("ms", time_zone="UTC"))
+        .alias("datetime"),
         pl.col("mean").round(5),
         pl.col("std").round(6),
         pl.col("volume").round(9),

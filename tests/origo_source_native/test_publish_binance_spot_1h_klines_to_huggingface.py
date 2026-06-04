@@ -44,34 +44,50 @@ def _origo_projection_1h_kline_dataframe(
         f"""
         SELECT
             kline_datetime AS datetime,
-            argMin(open, datetime) AS open,
-            max(high) AS high,
-            min(low) AS low,
-            argMax(close, datetime) AS close,
-            round(sum(no_of_trades * mean) / sum(no_of_trades), 5) AS mean,
+            argMin(source_open, source_datetime) AS open,
+            max(source_high) AS high,
+            min(source_low) AS low,
+            argMax(source_close, source_datetime) AS close,
+            round(sum(source_no_of_trades * source_mean) / sum(source_no_of_trades), 5) AS mean,
             round(
                 sqrt(
                     greatest(
-                        sum(no_of_trades * ((std * std) + (mean * mean))) / sum(no_of_trades)
-                        - pow(sum(no_of_trades * mean) / sum(no_of_trades), 2),
+                        sum(source_no_of_trades * ((source_std * source_std) + (source_mean * source_mean))) / sum(source_no_of_trades)
+                        - pow(sum(source_no_of_trades * source_mean) / sum(source_no_of_trades), 2),
                         0
                     )
                 ),
                 6
             ) AS std,
-            round(sumKahan(volume), 9) AS volume,
-            sum(no_of_trades * maker_ratio) / sum(no_of_trades) AS maker_ratio,
-            sum(no_of_trades) AS no_of_trades,
-            argMin(open_liquidity, datetime) AS open_liquidity,
-            max(high_liquidity) AS high_liquidity,
-            min(low_liquidity) AS low_liquidity,
-            argMax(close_liquidity, datetime) AS close_liquidity,
-            round(sum(liquidity_sum), 1) AS liquidity_sum,
-            sumKahan(maker_volume) AS maker_volume,
-            round(sum(maker_liquidity), 1) AS maker_liquidity
+            round(sumKahan(source_volume), 9) AS volume,
+            sum(source_no_of_trades * source_maker_ratio) / sum(source_no_of_trades) AS maker_ratio,
+            sum(source_no_of_trades) AS no_of_trades,
+            argMin(source_open_liquidity, source_datetime) AS open_liquidity,
+            max(source_high_liquidity) AS high_liquidity,
+            min(source_low_liquidity) AS low_liquidity,
+            argMax(source_close_liquidity, source_datetime) AS close_liquidity,
+            round(sum(source_liquidity_sum), 1) AS liquidity_sum,
+            sumKahan(source_maker_volume) AS maker_volume,
+            round(sum(source_maker_liquidity), 1) AS maker_liquidity
         FROM (
             SELECT
-                *,
+                datetime AS source_datetime,
+                open AS source_open,
+                high AS source_high,
+                low AS source_low,
+                close AS source_close,
+                mean AS source_mean,
+                std AS source_std,
+                volume AS source_volume,
+                maker_ratio AS source_maker_ratio,
+                no_of_trades AS source_no_of_trades,
+                open_liquidity AS source_open_liquidity,
+                high_liquidity AS source_high_liquidity,
+                low_liquidity AS source_low_liquidity,
+                close_liquidity AS source_close_liquidity,
+                liquidity_sum AS source_liquidity_sum,
+                maker_volume AS source_maker_volume,
+                maker_liquidity AS source_maker_liquidity,
                 toDateTime(3600 * intDiv(toUnixTimestamp(datetime), 3600)) AS kline_datetime
             FROM {database_name}.{table_name}
             WHERE datetime >= toDateTime('{start_date_limit}')
