@@ -29,3 +29,6 @@ loop
 .telemetry
 plugins/
 
+# Local Parquet mirror (dev bind mount)
+parquet_data/
+

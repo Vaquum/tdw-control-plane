@@ -49,6 +49,7 @@ services:
       - BINANCE_SPOT_DEPTH20_AUTH_TOKEN=${BINANCE_SPOT_DEPTH20_AUTH_TOKEN:?BINANCE_SPOT_DEPTH20_AUTH_TOKEN is required}
     volumes:
       - dagster-instance:/opt/dagster-instance
+      - tdw-parquet:/opt/parquet
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -61,4 +62,7 @@ volumes:
     external: true
   dagster-instance:
     name: tdw-control-plane_dagster-instance
+    external: true
+  tdw-parquet:
+    name: tdw-control-plane_parquet
     external: true

@@ -1,3 +1,6 @@
+# v1.16.0 on June 4, 2026
+- Add a 10-minute stateless job mirroring the 12 Binance spot kline series to monthly Parquet files on a local mount.
+
 # v1.15.2 on June 4, 2026
 - Route Hugging Face Binance spot time-kline exports through the Origo 1m kline projection.
 

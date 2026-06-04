@@ -48,6 +48,7 @@ services:
     volumes:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
+      - ./parquet_data:/opt/parquet
     depends_on:
       clickhouse:
         condition: service_healthy
