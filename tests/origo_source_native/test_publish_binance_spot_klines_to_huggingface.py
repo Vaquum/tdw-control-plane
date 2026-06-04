@@ -85,12 +85,97 @@ def _origo_projection_kline_dataframe(
     return pl.DataFrame(rows, schema=KLINE_EXPORT_COLUMNS, orient='row')
 
 
+def _origo_raw_kline_dataframe(
+    query_origo: Callable[[str], list[tuple[object, ...]]],
+    *,
+    kline_size_seconds: int,
+    start_date_limit: str,
+    end_date_limit: str,
+) -> pl.DataFrame:
+    raw_columns = ['datetime_ms', *KLINE_EXPORT_COLUMNS[1:]]
+    rows = query_origo(
+        f"""
+        SELECT
+            toUnixTimestamp(kline_datetime) * 1000 AS datetime_ms,
+            argMin(price, trade_id) AS open,
+            max(price) AS high,
+            min(price) AS low,
+            argMax(price, trade_id) AS close,
+            round(avg(price), 5) AS mean,
+            round(stddevPopStable(price), 6) AS std,
+            round(sumKahan(quantity), 9) AS volume,
+            avg(is_buyer_maker) AS maker_ratio,
+            count() AS no_of_trades,
+            argMin(price * quantity, trade_id) AS open_liquidity,
+            max(price * quantity) AS high_liquidity,
+            min(price * quantity) AS low_liquidity,
+            argMax(price * quantity, trade_id) AS close_liquidity,
+            round(sum(price * quantity), 1) AS liquidity_sum,
+            sumKahan(is_buyer_maker * quantity) AS maker_volume,
+            round(sum(is_buyer_maker * price * quantity), 1) AS maker_liquidity
+        FROM (
+            SELECT
+                *,
+                toDateTime({kline_size_seconds} * intDiv(toUnixTimestamp(datetime), {kline_size_seconds})) AS kline_datetime
+            FROM {ORIGO_DATABASE}.binance_daily_spot_trades
+            WHERE datetime >= toDateTime('{start_date_limit}')
+              AND datetime < toDateTime('{end_date_limit}')
+        )
+        GROUP BY kline_datetime
+        ORDER BY kline_datetime
+        """
+    )
+    return (
+        pl.DataFrame(rows, schema=raw_columns, orient='row')
+        .with_columns(
+            pl.col('datetime_ms').cast(pl.Datetime('ms', time_zone='UTC')).alias('datetime')
+        )
+        .select(KLINE_EXPORT_COLUMNS)
+    )
+
+
 def test_publish_sensor_targets_origo_spot_kline_materialization(
     origo_definitions_module: object,
 ) -> None:
     sensor_def = origo_definitions_module.publish_binance_spot_klines_to_huggingface_sensor
 
     assert sensor_def.asset_key == AssetKey('refresh_binance_spot_klines_origo')
+
+
+def test_one_minute_projection_helper_matches_raw_trade_export_values(
+    materialize_binance_spot_data_source_assets: Callable[..., object],
+    query_origo: Callable[[str], list[tuple[object, ...]]],
+) -> None:
+    partition_key = '2024-01-01'
+    start_date_limit = '2024-01-01 00:00:00'
+    end_date_limit = '2024-01-02 00:00:00'
+
+    result = materialize_binance_spot_data_source_assets(partition_key=partition_key)
+    assert getattr(result, 'success') is True
+
+    publish_helper_module = importlib.import_module(
+        'tdw_control_plane.utils.publish_binance_spot_kline_snapshot_to_huggingface'
+    )
+    projection_helper = getattr(
+        publish_helper_module,
+        '_get_binance_spot_klines_from_1m_projection',
+    )
+
+    actual = projection_helper(
+        kline_size_seconds=60,
+        start_date_limit=start_date_limit,
+        end_date_limit=end_date_limit,
+        table_name='binance_spot_klines',
+        database_name=ORIGO_DATABASE,
+    )
+    expected = _origo_raw_kline_dataframe(
+        query_origo,
+        kline_size_seconds=60,
+        start_date_limit=start_date_limit,
+        end_date_limit=end_date_limit,
+    )
+
+    assert actual.rows() == expected.rows()
 
 
 def test_publish_snapshot_reads_origo_spot_klines_projection(

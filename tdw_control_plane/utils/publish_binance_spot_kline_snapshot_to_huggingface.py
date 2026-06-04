@@ -154,11 +154,15 @@ def _get_binance_spot_klines_from_1m_projection(
                 min(source_low) AS low,
                 argMax(source_close, source_datetime) AS close,
                 sum(source_no_of_trades * source_mean) / sum(source_no_of_trades) AS mean,
-                sqrt(
-                    greatest(
-                        sum(source_no_of_trades * ((source_std * source_std) + (source_mean * source_mean))) / sum(source_no_of_trades)
-                        - pow(sum(source_no_of_trades * source_mean) / sum(source_no_of_trades), 2),
-                        0
+                if(
+                    {{bucket_seconds:UInt32}} = 60,
+                    argMin(source_std, source_datetime),
+                    sqrt(
+                        greatest(
+                            sum(source_no_of_trades * ((source_std * source_std) + (source_mean * source_mean))) / sum(source_no_of_trades)
+                            - pow(sum(source_no_of_trades * source_mean) / sum(source_no_of_trades), 2),
+                            0
+                        )
                     )
                 ) AS std,
                 sumKahan(source_volume) AS volume,
