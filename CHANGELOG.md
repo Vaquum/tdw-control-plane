@@ -1,3 +1,6 @@
+# v1.17.2 on June 5, 2026
+- Replace the legacy RFC issue template with a PRD issue form and keep the slice issue form loadable by removing its empty title field.
+
 # v1.17.1 on June 5, 2026
 - Fix the Arrow bar store writing multi-record-batch files for any series past polars' ~122k-row IPC batch default: a `memory_map=True` reader surfaced those batches as multiple chunks, breaking the single-batch zero-copy `ts` view the store exists to provide. Force one record batch via `record_batch_size`. Self-heals on deploy (the byte change yields a new content-hash version, so each series republishes once as a single batch).
 
