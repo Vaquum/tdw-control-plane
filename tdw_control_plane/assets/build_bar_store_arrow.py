@@ -258,9 +258,11 @@ def _ipc_payload(df: pl.DataFrame) -> bytes:
 def publish_series(series: str, build: BarSeriesBuild) -> PublishOutcome:
     """Atomically publish the shaped series and flip ``latest`` to it.
 
-    Skips the write entirely when the content hash already is ``latest``
-    (no churn), and skips the flip when ``latest`` already holds fresher data
-    (a slow, out-of-order run must never regress freshness)."""
+    The version bytes are written (and ``latest`` flipped) only when this tick
+    actually publishes: an unchanged content hash is a no-op (no churn), and a
+    slow out-of-order tick whose data is staler than ``latest`` is skipped
+    without writing -- so a skipped tick never leaves an unreferenced version on
+    disk to steal a retention slot from a published one or churn disk."""
     df = build.df
     if df.height == 0:
         return PublishOutcome("skipped_empty", None)
@@ -281,9 +283,6 @@ def publish_series(series: str, build: BarSeriesBuild) -> PublishOutcome:
     if _link_version(latest) == version and target.exists():
         return PublishOutcome("skipped_unchanged", version)
 
-    if not target.exists():
-        _atomic_write_bytes(target, payload)
-
     lock_path = directory / f".{series}.lock"
     with open(lock_path, "w", encoding="utf-8") as lock_file:
         fcntl.flock(lock_file, fcntl.LOCK_EX)
@@ -294,6 +293,11 @@ def publish_series(series: str, build: BarSeriesBuild) -> PublishOutcome:
             if existing_max is not None and new_max is not None and new_max < existing_max:
                 status = "skipped_not_newer"
             else:
+                # Write the version file only when we are actually going to publish it,
+                # under the lock: a skipped (stale/unchanged) tick then never leaves an
+                # unreferenced version on disk to occupy a retention slot or churn disk.
+                if not target.exists():
+                    _atomic_write_bytes(target, payload)
                 _atomic_swap_symlink(latest, target.name)
                 status = "published"
         reaped = reap_old_versions(
