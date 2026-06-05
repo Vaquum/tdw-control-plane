@@ -50,6 +50,7 @@ services:
     volumes:
       - dagster-instance:/opt/dagster-instance
       - tdw-parquet:/opt/parquet
+      - tdw-arrow:/opt/arrow
     depends_on:
       clickhouse:
         condition: service_healthy
@@ -70,3 +71,9 @@ volumes:
     # (rebuildable via the backfill job), so it does not need the external protection
     # the clickhouse-data / dagster-instance volumes have.
     name: tdw-control-plane_parquet
+  tdw-arrow:
+    # Compose-managed, same rationale as tdw-parquet: holds the versioned Arrow bar
+    # store, which is fully reproducible from the Parquet mirror (re-materialize the
+    # build_bar_store_arrow asset). Dagster is the sole writer; consumers mount this
+    # volume read-only by the pinned name.
+    name: tdw-control-plane_arrow

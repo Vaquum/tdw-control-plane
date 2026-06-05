@@ -97,9 +97,9 @@ def test_mount_export_factory_registers_twelve_series() -> None:
     }
 
 
-def test_mount_export_schedule_runs_every_ten_minutes(origo_definitions_module: Any) -> None:
+def test_mount_export_schedule_runs_every_minute(origo_definitions_module: Any) -> None:
     schedule = origo_definitions_module.publish_binance_spot_klines_to_mount_schedule
-    assert schedule.cron_schedule == "*/10 * * * *"
+    assert schedule.cron_schedule == "* * * * *"
     assert schedule.execution_timezone == "UTC"
 
     assert months_for_run("tick", datetime(2024, 3, 15)) == [(2024, 2), (2024, 3)]
