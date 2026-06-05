@@ -14,7 +14,9 @@ publishes it under ``LOCAL_ARROW_DIR`` so a consumer can ``mmap`` the file and
    reproducible against the Parquet (and thus ClickHouse / Hugging Face). The only
    derived columns are ``ts`` / ``start_ts``, an exact ms->ns re-encode of the bar
    datetimes;
-4. combine to a single record batch (``rechunk``) so the consumer sees one chunk;
+4. write one record batch -- ``record_batch_size`` forces a single batch (polars
+   otherwise splits large frames, and a ``memory_map`` reader surfaces each batch
+   as its own chunk), so the consumer sees one contiguous chunk;
 5. write Feather v2 / Arrow IPC, uncompressed (mmap needs raw bytes).
 
 Publishing is atomic and never in place: the bytes land in a same-dir temp file
