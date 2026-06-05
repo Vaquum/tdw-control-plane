@@ -1,6 +1,5 @@
 name: Slice
 description: Plan, deliver, and close one tdw-control-plane slice against mechanical proof.
-title: ""
 labels:
   - slice
   - planning
