@@ -15,10 +15,14 @@ import requests
 from clickhouse_driver import Client as ClickhouseClient
 from dagster import (
     AssetKey,
+    DagsterRunStatus,
     DefaultScheduleStatus,
+    DefaultSensorStatus,
     Definitions,
     RunConfig,
     RunRequest,
+    RunStatusSensorContext,
+    RunStatusSensorDefinition,
     ScheduleDefinition,
     ScheduleEvaluationContext,
     SkipReason,
@@ -176,6 +180,10 @@ from .assets.publish_binance_spot_klines_to_mount import (
     MOUNT_EXPORT_ASSETS,
     SPECS as MOUNT_EXPORT_SPECS,
     MountExportConfig,
+)
+from .assets.build_bar_store_arrow import (
+    build_bar_store_arrow,
+    bar_store_partition_run_requests,
 )
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
@@ -433,9 +441,17 @@ backfill_binance_spot_klines_to_mount_job = define_asset_job(
 publish_binance_spot_klines_to_mount_schedule = ScheduleDefinition(
     name="publish_binance_spot_klines_to_mount_schedule",
     job=publish_binance_spot_klines_to_mount_job,
-    cron_schedule="*/10 * * * *",
+    cron_schedule="* * * * *",
     execution_timezone="UTC",
     default_status=DefaultScheduleStatus.RUNNING,
+)
+
+# Local Arrow Bar Store Jobs
+
+build_bar_store_arrow_job = define_asset_job(
+    name="build_bar_store_arrow_job",
+    selection=[build_bar_store_arrow],
+    executor_def=in_process_executor,
 )
 
 insert_monthly_binance_agg_trades_job = define_asset_job(
@@ -969,6 +985,30 @@ def publish_binance_spot_240M_dollar_klines_to_huggingface_sensor(
     )
 
 
+def _bar_store_on_mirror_success(context: RunStatusSensorContext) -> list[RunRequest]:
+    """When the Parquet mirror job succeeds, rebuild every Arrow series.
+
+    Event-driven off the mirror job's completion (not a clock or a file poll):
+    each successful mirror tick fans out one Arrow run per series, run-keyed to
+    the mirror run so the same success is never acted on twice. The asset's
+    content-hash versioning still suppresses a republish when bytes are unchanged.
+    """
+    return bar_store_partition_run_requests(context.dagster_run.run_id)
+
+
+# Built as a RunStatusSensorDefinition (class) rather than the @run_status_sensor
+# decorator: the decorator factory is partially typed in the dagster stubs (would add a
+# pyright error), while the class constructor types cleanly.
+bar_store_source_sensor = RunStatusSensorDefinition(
+    name="bar_store_source_sensor",
+    run_status=DagsterRunStatus.SUCCESS,
+    run_status_sensor_fn=_bar_store_on_mirror_success,
+    monitored_jobs=[publish_binance_spot_klines_to_mount_job],
+    request_job=build_bar_store_arrow_job,
+    default_status=DefaultSensorStatus.RUNNING,
+)
+
+
 defs = Definitions(
     assets=[create_tdw_database,
             create_origo_database,
@@ -1020,6 +1060,7 @@ defs = Definitions(
             publish_binance_spot_120M_dollar_klines_to_huggingface,
             publish_binance_spot_240M_dollar_klines_to_huggingface,
             *MOUNT_EXPORT_ASSETS,
+            build_bar_store_arrow,
             cleanup_binance_daily_trades_for_finalized_month,
             create_binance_trades_monthly_summary,
             create_binance_trades_daily_summary,
@@ -1058,8 +1099,9 @@ defs = Definitions(
         publish_binance_spot_60M_dollar_klines_to_huggingface_sensor,
         publish_binance_spot_120M_dollar_klines_to_huggingface_sensor,
         publish_binance_spot_240M_dollar_klines_to_huggingface_sensor,
+        bar_store_source_sensor,
     ],
-    
+
     jobs=[create_tdw_database_job,
           create_origo_database_job,
           create_binance_trades_table_job,
@@ -1101,6 +1143,7 @@ defs = Definitions(
           publish_binance_spot_240M_dollar_klines_to_huggingface_job,
           publish_binance_spot_klines_to_mount_job,
           backfill_binance_spot_klines_to_mount_job,
+          build_bar_store_arrow_job,
           roll_forward_monthly_binance_trades_job,
           create_binance_trades_monthly_summary_job,
           create_binance_trades_daily_summary_job,

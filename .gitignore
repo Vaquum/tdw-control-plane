@@ -32,3 +32,6 @@ plugins/
 # Local Parquet mirror (dev bind mount)
 parquet_data/
 
+# Local Arrow bar store (dev bind mount)
+arrow_data/
+

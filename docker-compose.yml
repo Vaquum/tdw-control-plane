@@ -49,6 +49,7 @@ services:
       - .:/opt/app
       - dagster-instance:/opt/dagster-instance
       - ./parquet_data:/opt/parquet
+      - ./arrow_data:/opt/arrow
     depends_on:
       clickhouse:
         condition: service_healthy

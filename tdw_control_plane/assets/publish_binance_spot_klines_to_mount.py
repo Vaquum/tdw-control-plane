@@ -1,5 +1,5 @@
 """Mirror the 12 HF Binance spot kline series to monthly Parquet files on a
-local mount, refreshed every 10 minutes.
+local mount, refreshed every minute.
 
 Stateless: each tick rebuilds the open month(s) from the Origo projections and
 replaces the month file atomically. The filesystem is the only state. A

@@ -1,3 +1,7 @@
+# v1.17.0 on June 5, 2026
+- Add a versioned, mmap-ready Arrow bar store: a run-status sensor rebuilds every series into a single-record-batch, uncompressed Arrow IPC file under LOCAL_ARROW_DIR (default /opt/arrow) whenever the Parquet mirror job succeeds. Measures are carried verbatim at full precision (no downcast), so the store stays bit-for-bit reproducible against the mirror; it is published with an atomic `latest` symlink swap, content-hash versioning, a monotonic freshness guard, and a few retained prior versions so in-flight mmap and pinned-version reads never break mid-swap.
+- Run the Binance spot Parquet mirror every minute (was every 10 minutes) so the mirror — and the Arrow bar store it triggers on completion — track the 1-minute ClickHouse latest projections.
+
 # v1.16.1 on June 4, 2026
 - Fix Binance spot dollar-kline Hugging Face exports collapsing every timestamp to ~1970 under polars >=1.40 by emitting millisecond-precision DateTime64 so the Arrow round-trip preserves the real dates.
 
