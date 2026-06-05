@@ -202,6 +202,36 @@ def test_asset_publishes_mmap_ready_arrow(tmp_path: Path, monkeypatch: pytest.Mo
     assert len(set(ts.tolist())) == len(ts)
 
 
+def test_large_series_publishes_single_record_batch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Far past polars' default ~122k-row IPC batch size: a naive write_ipc splits into
+    # several record batches that a memory_map=True reader exposes as multiple chunks,
+    # which breaks the zero-copy ts view. _ipc_payload's record_batch_size forces one
+    # batch. (The small-frame tests above never crossed the threshold, so they missed
+    # this -- it surfaced only in production on million-row series.)
+    monkeypatch.setenv("LOCAL_PARQUET_DIR", str(tmp_path / "parquet"))
+    monkeypatch.setenv("LOCAL_ARROW_DIR", str(tmp_path / "arrow"))
+    spec = spec_for_series("time_1m")
+    rows = 200_000
+    minute_ms = 60_000
+    _write_month(
+        tmp_path / "parquet",
+        spec,
+        _time_frame([BASE_MS + index * minute_ms for index in range(rows)]),
+        2024,
+        1,
+    )
+
+    outcome = publish_series("time_1m", build_series_frame(spec, tmp_path / "parquet"))
+    assert outcome.status == "published"
+
+    frame = pl.read_ipc(series_store_dir("time_1m") / LATEST_NAME, memory_map=True, rechunk=False)
+    assert frame.height == rows
+    assert frame.n_chunks() == 1  # one record batch even well past the split threshold
+    frame["ts"].to_numpy(allow_copy=False)  # zero-copy must succeed (raises if multi-chunk)
+
+
 def test_atomic_swap_keeps_pre_open_handle_readable(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

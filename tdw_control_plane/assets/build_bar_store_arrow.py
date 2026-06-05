@@ -251,7 +251,11 @@ def reap_old_versions(
 
 def _ipc_payload(df: pl.DataFrame) -> bytes:
     sink = io.BytesIO()
-    df.write_ipc(sink, compression="uncompressed")
+    # record_batch_size >= height forces a single record batch. Without it polars
+    # splits frames past its default (~122k rows) into multiple batches, which a
+    # ``memory_map=True`` reader surfaces as multiple chunks -- breaking the single
+    # batch / zero-copy ``ts`` contract for every non-trivial series.
+    df.write_ipc(sink, compression="uncompressed", record_batch_size=max(df.height, 1))
     return sink.getvalue()
 
 
