@@ -144,7 +144,7 @@ def _output_columns(family: str) -> tuple[str, ...]:
 
 
 def build_series_frame(spec: MountKlineSpec, parquet_root: Path) -> BarSeriesBuild:
-    """Read, shape, sort, dedupe, downcast, and single-batch one series.
+    """Read, shape, sort, dedupe, and single-batch one series at full precision.
 
     ``ts`` is Int64 nanoseconds (UTC): the bar ``datetime`` for time series, the
     bar ``end_datetime`` for dollar series. Measure columns are carried verbatim
