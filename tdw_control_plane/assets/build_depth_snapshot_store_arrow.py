@@ -1,12 +1,27 @@
+import hashlib
+import io
+import json
+import os
+import time
+import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import cast
 
 import polars as pl
 import pyarrow as pa
-from dagster import AssetExecutionContext, Config, RunRequest, StaticPartitionsDefinition, asset
+from dagster import (
+    AssetExecutionContext,
+    Config,
+    RunConfig,
+    RunRequest,
+    StaticPartitionsDefinition,
+    asset,
+)
 
-from tdw_control_plane.assets.build_bar_store_arrow import BarSeriesBuild, publish_series
+from tdw_control_plane.assets.build_bar_store_arrow import BarSeriesBuild, series_store_dir
 from tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo import (
     ClickHouseClient,
     get_clickhouse_settings,
@@ -23,12 +38,15 @@ DEPTH_SNAPSHOT_SERIES: tuple[str, ...] = ('depth20_snapshots', 'depth200_snapsho
 DEPTH_SNAPSHOT_PARTITIONS = StaticPartitionsDefinition(list(DEPTH_SNAPSHOT_SERIES))
 DEPTH20_SOURCE_JOB_NAME = 'refresh_binance_spot_depth20_data_source_job'
 DEPTH200_SOURCE_JOB_NAME = 'refresh_binance_spot_depth200_data_source_job'
+LATEST_MANIFEST_NAME = 'latest.json'
+VERSION_HEX = 16
 
 BookLevel = tuple[float, float]
 
 
 class DepthSnapshotStoreConfig(Config):
     dry_run: bool = False
+    source_partition_key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -45,6 +63,13 @@ class DepthSnapshotRow:
     last_update_id: int
     bids: tuple[BookLevel, ...]
     asks: tuple[BookLevel, ...]
+
+
+@dataclass(frozen=True)
+class DepthSnapshotChunkPublish:
+    status: str
+    version: str | None
+    chunk: str | None
 
 
 _DEPTH_SNAPSHOT_SPECS: tuple[DepthSnapshotSpec, ...] = (
@@ -68,11 +93,41 @@ def spec_for_depth_snapshot_series(series: str) -> DepthSnapshotSpec:
 def depth_snapshot_store_partition_run_request(
     source_job_name: str,
     source_run_id: str,
+    source_partition_key: str,
 ) -> RunRequest:
     series = _SOURCE_JOB_TO_SERIES.get(source_job_name)
     if series is None:
         raise ValueError(f'Unknown depth snapshot source job: {source_job_name}')
-    return RunRequest(partition_key=series, run_key=f'{series}:{source_run_id}')
+    return RunRequest(
+        partition_key=series,
+        run_key=f'{series}:{source_run_id}',
+        run_config=RunConfig(
+            ops={
+                'build_depth_snapshot_store_arrow': DepthSnapshotStoreConfig(
+                    source_partition_key=source_partition_key
+                )
+            }
+        ),
+    )
+
+
+def minute_start_from_partition_key(partition_key: str) -> datetime:
+    parsed = datetime.fromisoformat(partition_key)
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc).replace(second=0, microsecond=0)
+
+
+def _clickhouse_datetime64(value: datetime) -> str:
+    utc_value = value.astimezone(timezone.utc)
+    return utc_value.strftime('%Y-%m-%d %H:%M:%S.000')
+
+
+def depth_snapshot_chunk_relative_path(minute_start: datetime) -> Path:
+    utc_minute = minute_start.astimezone(timezone.utc).replace(second=0, microsecond=0)
+    return (
+        Path('chunks') / utc_minute.strftime('%Y/%m/%d/%H') / f'{utc_minute:%Y%m%dT%H%M%SZ}.arrow'
+    )
 
 
 def _snapshot_rows(result: object, spec: DepthSnapshotSpec) -> tuple[DepthSnapshotRow, ...]:
@@ -192,7 +247,9 @@ def build_depth_snapshot_frame(
     client: ClickHouseClient,
     database: str,
     spec: DepthSnapshotSpec,
+    minute_start: datetime,
 ) -> BarSeriesBuild:
+    minute_end = minute_start + timedelta(minutes=1)
     result = client.execute(
         f"""
         SELECT
@@ -202,6 +259,8 @@ def build_depth_snapshot_frame(
             bids,
             asks
         FROM {database}.{spec.table_name} FINAL
+        WHERE datetime >= toDateTime64('{_clickhouse_datetime64(minute_start)}', 3)
+          AND datetime < toDateTime64('{_clickhouse_datetime64(minute_end)}', 3)
         ORDER BY ts ASC, source_timestamp_ms ASC
         """
     )
@@ -218,14 +277,65 @@ def build_depth_snapshot_frame(
     )
 
 
+def _ipc_payload(df: pl.DataFrame) -> bytes:
+    sink = io.BytesIO()
+    df.write_ipc(sink, compression='uncompressed', record_batch_size=max(df.height, 1))
+    return sink.getvalue()
+
+
+def _fsync_file(handle: io.BufferedWriter) -> None:
+    handle.flush()
+    os.fsync(handle.fileno())
+
+
+def _atomic_write_bytes(target: Path, payload: bytes) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / f'.{target.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}'
+    with open(tmp, 'wb') as handle:
+        handle.write(payload)
+        _fsync_file(handle)
+    os.replace(tmp, target)
+
+
+def publish_depth_snapshot_chunk(
+    series: str,
+    source_partition_key: str,
+    build: BarSeriesBuild,
+) -> DepthSnapshotChunkPublish:
+    payload = _ipc_payload(build.df)
+    version = hashlib.sha256(payload).hexdigest()[:VERSION_HEX]
+    minute_start = minute_start_from_partition_key(source_partition_key)
+    relative_chunk = depth_snapshot_chunk_relative_path(minute_start)
+    directory = series_store_dir(series)
+    chunk = directory / relative_chunk
+    _atomic_write_bytes(chunk, payload)
+
+    manifest = {
+        'series': series,
+        'source_partition_key': source_partition_key,
+        'chunk': relative_chunk.as_posix(),
+        'rows': build.df.height,
+        'source_rows': build.source_rows,
+        'dropped_duplicate_ts': build.dropped_duplicate_ts,
+        'version': version,
+        'updated_at_unix_ns': time.time_ns(),
+    }
+    _atomic_write_bytes(
+        directory / LATEST_MANIFEST_NAME,
+        json.dumps(manifest, sort_keys=True).encode('utf-8') + b'\n',
+    )
+    return DepthSnapshotChunkPublish('published', version, relative_chunk.as_posix())
+
+
 @asset(
     name='build_depth_snapshot_store_arrow',
     partitions_def=DEPTH_SNAPSHOT_PARTITIONS,
     group_name='binance_depth_snapshot_store',
     description=(
         'Projects raw Binance spot depth20/depth200 ClickHouse snapshots into '
-        'versioned, mmap-ready Arrow IPC files under LOCAL_ARROW_DIR. Each partition '
-        'writes one uncompressed record batch with fixed-size nested bid/ask book columns.'
+        'minute chunk Arrow IPC files under LOCAL_ARROW_DIR. Each successful source '
+        'partition writes one uncompressed record batch with fixed-size nested bid/ask '
+        'book columns and atomically flips latest.json.'
     ),
 )
 def build_depth_snapshot_store_arrow(
@@ -233,12 +343,17 @@ def build_depth_snapshot_store_arrow(
     config: DepthSnapshotStoreConfig,
 ) -> dict[str, object]:
     series = context.partition_key
+    source_partition_key = config.source_partition_key
+    if source_partition_key is None:
+        raise RuntimeError('Depth snapshot Arrow chunks require source_partition_key config.')
+
+    minute_start = minute_start_from_partition_key(source_partition_key)
     spec = spec_for_depth_snapshot_series(series)
     settings = get_clickhouse_settings()
     client = make_clickhouse_client(settings)
 
     try:
-        build = build_depth_snapshot_frame(client, settings.database, spec)
+        build = build_depth_snapshot_frame(client, settings.database, spec, minute_start)
         if build.dropped_duplicate_ts > 0:
             context.log.warning(
                 f'{series}: dropped {build.dropped_duplicate_ts} row(s) with duplicate ts to keep '
@@ -249,25 +364,27 @@ def build_depth_snapshot_store_arrow(
             return {
                 'status': 'dry_run',
                 'series': series,
+                'source_partition_key': source_partition_key,
                 'rows': build.df.height,
                 'source_rows': build.source_rows,
                 'dropped_duplicate_ts': build.dropped_duplicate_ts,
             }
 
-        outcome = publish_series(series, build)
+        outcome = publish_depth_snapshot_chunk(series, source_partition_key, build)
         context.log.info(
-            f'{series}: {outcome.status} version={outcome.version} rows={build.df.height} '
-            f'reaped={len(outcome.reaped)}'
+            f'{series}: {outcome.status} chunk={outcome.chunk} version={outcome.version} '
+            f'rows={build.df.height}'
         )
         return {
             'status': 'success',
             'series': series,
+            'source_partition_key': source_partition_key,
             'rows': build.df.height,
             'source_rows': build.source_rows,
             'dropped_duplicate_ts': build.dropped_duplicate_ts,
             'version': outcome.version,
+            'chunk': outcome.chunk,
             'outcome': outcome.status,
-            'reaped': len(outcome.reaped),
         }
     finally:
         client.disconnect()
