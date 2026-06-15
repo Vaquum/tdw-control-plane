@@ -1,3 +1,6 @@
+# v1.18.0 on June 15, 2026
+- Add Binance spot depth200 source-native snapshots and 1-minute projection tables alongside the existing depth20 source.
+
 # v1.17.2 on June 5, 2026
 - Replace the legacy RFC issue template with a PRD issue form and keep the slice issue form loadable by removing its empty title field.
 
