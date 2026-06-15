@@ -201,6 +201,7 @@ from .assets.build_bar_store_arrow import (
     build_bar_store_arrow,
     bar_store_partition_run_requests,
 )
+from .assets.build_depth_snapshot_store_arrow import build_depth_snapshot_store_arrow
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -497,6 +498,12 @@ publish_binance_spot_klines_to_mount_schedule = ScheduleDefinition(
 build_bar_store_arrow_job = define_asset_job(
     name="build_bar_store_arrow_job",
     selection=[build_bar_store_arrow],
+    executor_def=in_process_executor,
+)
+
+build_depth_snapshot_store_arrow_job = define_asset_job(
+    name='build_depth_snapshot_store_arrow_job',
+    selection=[build_depth_snapshot_store_arrow],
     executor_def=in_process_executor,
 )
 
@@ -1132,6 +1139,7 @@ defs = Definitions(
             publish_binance_spot_240M_dollar_klines_to_huggingface,
             *MOUNT_EXPORT_ASSETS,
             build_bar_store_arrow,
+            build_depth_snapshot_store_arrow,
             cleanup_binance_daily_trades_for_finalized_month,
             create_binance_trades_monthly_summary,
             create_binance_trades_daily_summary,
@@ -1221,6 +1229,7 @@ defs = Definitions(
           publish_binance_spot_klines_to_mount_job,
           backfill_binance_spot_klines_to_mount_job,
           build_bar_store_arrow_job,
+          build_depth_snapshot_store_arrow_job,
           roll_forward_monthly_binance_trades_job,
           create_binance_trades_monthly_summary_job,
           create_binance_trades_daily_summary_job,
