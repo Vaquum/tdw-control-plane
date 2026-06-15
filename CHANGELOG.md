@@ -1,3 +1,6 @@
+# v1.18.1 on June 15, 2026
+- Wire Binance spot depth200 service credentials into the deployment environment.
+
 # v1.18.0 on June 15, 2026
 - Add Binance spot depth200 source-native snapshots and 1-minute projection tables alongside the existing depth20 source.
 
