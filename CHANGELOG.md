@@ -1,3 +1,6 @@
+# v1.19.0 on June 15, 2026
+- Publish Binance spot depth20 and depth200 raw snapshots as mmap-ready Arrow IPC files under `/opt/arrow`.
+
 # v1.18.1 on June 15, 2026
 - Wire Binance spot depth200 service credentials into the deployment environment.
 
