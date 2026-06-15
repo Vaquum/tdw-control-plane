@@ -14,11 +14,14 @@ os.environ.setdefault('CLICKHOUSE_PASSWORD', 'import-guard')
 import tdw_control_plane.assets.build_depth_snapshot_store_arrow as depth_store
 from tdw_control_plane.assets.build_bar_store_arrow import LATEST_NAME, series_store_dir
 from tdw_control_plane.assets.build_depth_snapshot_store_arrow import (
+    DEPTH20_SOURCE_JOB_NAME,
+    DEPTH200_SOURCE_JOB_NAME,
     DEPTH_SNAPSHOT_PARTITIONS,
     DEPTH_SNAPSHOT_SERIES,
     DepthSnapshotSpec,
     build_depth_snapshot_frame,
     build_depth_snapshot_store_arrow,
+    depth_snapshot_store_partition_run_request,
     spec_for_depth_snapshot_series,
 )
 
@@ -183,9 +186,36 @@ def test_asset_publishes_single_record_batch_ipc(
     assert reader.read_all().column('ts').num_chunks == 1
 
 
+def test_depth_snapshot_partition_run_request_maps_source_jobs() -> None:
+    depth20 = depth_snapshot_store_partition_run_request(DEPTH20_SOURCE_JOB_NAME, 'run-20')
+    depth200 = depth_snapshot_store_partition_run_request(DEPTH200_SOURCE_JOB_NAME, 'run-200')
+
+    assert depth20.partition_key == 'depth20_snapshots'
+    assert depth20.run_key == 'depth20_snapshots:run-20'
+    assert depth200.partition_key == 'depth200_snapshots'
+    assert depth200.run_key == 'depth200_snapshots:run-200'
+
+    with pytest.raises(ValueError, match='Unknown depth snapshot source job: other_job'):
+        depth_snapshot_store_partition_run_request('other_job', 'run-other')
+
+
 def test_definitions_wires_depth_snapshot_arrow_job(origo_definitions_module: object) -> None:
     job = getattr(origo_definitions_module, 'build_depth_snapshot_store_arrow_job')
     asset_def = getattr(origo_definitions_module, 'build_depth_snapshot_store_arrow')
 
     assert job.name == 'build_depth_snapshot_store_arrow_job'
     assert asset_def.partitions_def.get_partition_keys() == list(DEPTH_SNAPSHOT_SERIES)
+
+
+def test_definitions_wires_depth_snapshot_arrow_sensor_to_depth_source_jobs(
+    origo_definitions_module: object,
+) -> None:
+    sensor = getattr(origo_definitions_module, 'depth_snapshot_store_source_sensor')
+    arrow_job = getattr(origo_definitions_module, 'build_depth_snapshot_store_arrow_job')
+    depth20_job = getattr(origo_definitions_module, 'refresh_binance_spot_depth20_data_source_job')
+    depth200_job = getattr(origo_definitions_module, 'refresh_binance_spot_depth200_data_source_job')
+
+    assert sensor.name == 'depth_snapshot_store_source_sensor'
+    assert arrow_job.name == 'build_depth_snapshot_store_arrow_job'
+    assert depth20_job.name == DEPTH20_SOURCE_JOB_NAME
+    assert depth200_job.name == DEPTH200_SOURCE_JOB_NAME

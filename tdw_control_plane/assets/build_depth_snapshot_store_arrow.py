@@ -4,7 +4,7 @@ from typing import cast
 
 import polars as pl
 import pyarrow as pa
-from dagster import AssetExecutionContext, Config, StaticPartitionsDefinition, asset
+from dagster import AssetExecutionContext, Config, RunRequest, StaticPartitionsDefinition, asset
 
 from tdw_control_plane.assets.build_bar_store_arrow import BarSeriesBuild, publish_series
 from tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo import (
@@ -21,6 +21,8 @@ from tdw_control_plane.assets.create_binance_spot_depth200_snapshots_table_origo
 
 DEPTH_SNAPSHOT_SERIES: tuple[str, ...] = ('depth20_snapshots', 'depth200_snapshots')
 DEPTH_SNAPSHOT_PARTITIONS = StaticPartitionsDefinition(list(DEPTH_SNAPSHOT_SERIES))
+DEPTH20_SOURCE_JOB_NAME = 'refresh_binance_spot_depth20_data_source_job'
+DEPTH200_SOURCE_JOB_NAME = 'refresh_binance_spot_depth200_data_source_job'
 
 BookLevel = tuple[float, float]
 
@@ -50,12 +52,27 @@ _DEPTH_SNAPSHOT_SPECS: tuple[DepthSnapshotSpec, ...] = (
     DepthSnapshotSpec('depth200_snapshots', DEPTH200_SNAPSHOTS_TABLE_NAME, 200),
 )
 
+_SOURCE_JOB_TO_SERIES: dict[str, str] = {
+    DEPTH20_SOURCE_JOB_NAME: 'depth20_snapshots',
+    DEPTH200_SOURCE_JOB_NAME: 'depth200_snapshots',
+}
+
 
 def spec_for_depth_snapshot_series(series: str) -> DepthSnapshotSpec:
     for spec in _DEPTH_SNAPSHOT_SPECS:
         if spec.series == series:
             return spec
     raise ValueError(f'Unknown depth snapshot series: {series}')
+
+
+def depth_snapshot_store_partition_run_request(
+    source_job_name: str,
+    source_run_id: str,
+) -> RunRequest:
+    series = _SOURCE_JOB_TO_SERIES.get(source_job_name)
+    if series is None:
+        raise ValueError(f'Unknown depth snapshot source job: {source_job_name}')
+    return RunRequest(partition_key=series, run_key=f'{series}:{source_run_id}')
 
 
 def _snapshot_rows(result: object, spec: DepthSnapshotSpec) -> tuple[DepthSnapshotRow, ...]:

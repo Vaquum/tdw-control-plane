@@ -201,7 +201,10 @@ from .assets.build_bar_store_arrow import (
     build_bar_store_arrow,
     bar_store_partition_run_requests,
 )
-from .assets.build_depth_snapshot_store_arrow import build_depth_snapshot_store_arrow
+from .assets.build_depth_snapshot_store_arrow import (
+    build_depth_snapshot_store_arrow,
+    depth_snapshot_store_partition_run_request,
+)
 
 CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "clickhouse")
 CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT", 9000))
@@ -1069,6 +1072,13 @@ def _bar_store_on_mirror_success(context: RunStatusSensorContext) -> list[RunReq
     return bar_store_partition_run_requests(context.dagster_run.run_id)
 
 
+def _depth_snapshot_store_on_source_success(context: RunStatusSensorContext) -> RunRequest:
+    return depth_snapshot_store_partition_run_request(
+        context.dagster_run.job_name,
+        context.dagster_run.run_id,
+    )
+
+
 # Built as a RunStatusSensorDefinition (class) rather than the @run_status_sensor
 # decorator: the decorator factory is partially typed in the dagster stubs (would add a
 # pyright error), while the class constructor types cleanly.
@@ -1078,6 +1088,18 @@ bar_store_source_sensor = RunStatusSensorDefinition(
     run_status_sensor_fn=_bar_store_on_mirror_success,
     monitored_jobs=[publish_binance_spot_klines_to_mount_job],
     request_job=build_bar_store_arrow_job,
+    default_status=DefaultSensorStatus.RUNNING,
+)
+
+depth_snapshot_store_source_sensor = RunStatusSensorDefinition(
+    name='depth_snapshot_store_source_sensor',
+    run_status=DagsterRunStatus.SUCCESS,
+    run_status_sensor_fn=_depth_snapshot_store_on_source_success,
+    monitored_jobs=[
+        refresh_binance_spot_depth20_data_source_job,
+        refresh_binance_spot_depth200_data_source_job,
+    ],
+    request_job=build_depth_snapshot_store_arrow_job,
     default_status=DefaultSensorStatus.RUNNING,
 )
 
@@ -1180,6 +1202,7 @@ defs = Definitions(
         publish_binance_spot_120M_dollar_klines_to_huggingface_sensor,
         publish_binance_spot_240M_dollar_klines_to_huggingface_sensor,
         bar_store_source_sensor,
+        depth_snapshot_store_source_sensor,
     ],
 
     jobs=[create_tdw_database_job,

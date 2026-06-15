@@ -1,3 +1,6 @@
+# v1.20.0 on June 15, 2026
+- Auto-update Binance spot depth20 and depth200 Arrow snapshots after their source refresh jobs succeed.
+
 # v1.19.0 on June 15, 2026
 - Publish Binance spot depth20 and depth200 raw snapshots as mmap-ready Arrow IPC files under `/opt/arrow`.
 
