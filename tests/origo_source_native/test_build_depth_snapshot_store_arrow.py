@@ -295,3 +295,8 @@ def test_definitions_wires_depth_snapshot_arrow_sensor_to_depth_source_jobs(
     assert arrow_job.name == 'build_depth_snapshot_store_arrow_job'
     assert depth20_job.name == DEPTH20_SOURCE_JOB_NAME
     assert depth200_job.name == DEPTH200_SOURCE_JOB_NAME
+    assert sensor.job_name == arrow_job.name
+    assert {job.name for job in sensor._monitored_jobs} == {
+        DEPTH20_SOURCE_JOB_NAME,
+        DEPTH200_SOURCE_JOB_NAME,
+    }
