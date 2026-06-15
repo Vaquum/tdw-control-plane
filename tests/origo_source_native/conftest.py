@@ -194,18 +194,26 @@ def binance_futures_daily_base_url(binance_fixture_server_root_url: str) -> str:
     return f'{binance_fixture_server_root_url}/futures/daily/trades/BTCUSDT/'
 
 
+@pytest.fixture(scope='session')
+def binance_depth200_base_url(binance_fixture_server_root_url: str) -> str:
+    return f'{binance_fixture_server_root_url}/spot/depth200'
+
+
 @pytest.fixture()
 def origo_test_env(
     monkeypatch: pytest.MonkeyPatch,
     clickhouse_settings: dict[str, str],
     binance_daily_base_url: str,
     binance_futures_daily_base_url: str,
+    binance_depth200_base_url: str,
 ) -> dict[str, str]:
     _drop_origo_database(clickhouse_settings)
     for key, value in clickhouse_settings.items():
         monkeypatch.setenv(key, value)
     monkeypatch.setenv('BINANCE_SPOT_DAILY_TRADES_BASE_URL', binance_daily_base_url)
     monkeypatch.setenv('BINANCE_FUTURES_DAILY_TRADES_BASE_URL', binance_futures_daily_base_url)
+    monkeypatch.setenv('BINANCE_SPOT_DEPTH200_BASE_URL', binance_depth200_base_url)
+    monkeypatch.setenv('BINANCE_SPOT_DEPTH200_AUTH_TOKEN', 'test-token')
 
     yield clickhouse_settings
 
@@ -284,6 +292,21 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
     )
     reconcile_binance_spot_depth20_partition_state_origo_module = _reload_module(
         'tdw_control_plane.assets.reconcile_binance_spot_depth20_partition_state_origo'
+    )
+    create_binance_spot_depth200_snapshots_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_depth200_snapshots_table_origo'
+    )
+    sync_binance_spot_depth200_snapshots_to_origo_module = _reload_module(
+        'tdw_control_plane.assets.sync_binance_spot_depth200_snapshots_to_origo'
+    )
+    create_binance_spot_depth200_1m_table_origo_module = _reload_module(
+        'tdw_control_plane.assets.create_binance_spot_depth200_1m_table_origo'
+    )
+    refresh_binance_spot_depth200_1m_origo_module = _reload_module(
+        'tdw_control_plane.assets.refresh_binance_spot_depth200_1m_origo'
+    )
+    reconcile_binance_spot_depth200_partition_state_origo_module = _reload_module(
+        'tdw_control_plane.assets.reconcile_binance_spot_depth200_partition_state_origo'
     )
     create_binance_spot_latest_tables_origo_module = _reload_module(
         'tdw_control_plane.assets.create_binance_spot_latest_tables_origo'
@@ -422,6 +445,27 @@ def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
         ),
         'DEPTH20_1M_TABLE_NAME': (
             create_binance_spot_depth20_1m_table_origo_module.DEPTH20_1M_TABLE_NAME
+        ),
+        'create_binance_spot_depth200_snapshots_table_origo': (
+            create_binance_spot_depth200_snapshots_table_origo_module.create_binance_spot_depth200_snapshots_table_origo
+        ),
+        'sync_binance_spot_depth200_snapshots_to_origo': (
+            sync_binance_spot_depth200_snapshots_to_origo_module.sync_binance_spot_depth200_snapshots_to_origo
+        ),
+        'create_binance_spot_depth200_1m_table_origo': (
+            create_binance_spot_depth200_1m_table_origo_module.create_binance_spot_depth200_1m_table_origo
+        ),
+        'refresh_binance_spot_depth200_1m_origo': (
+            refresh_binance_spot_depth200_1m_origo_module.refresh_binance_spot_depth200_1m_origo
+        ),
+        'reconcile_binance_spot_depth200_partition_state_origo': (
+            reconcile_binance_spot_depth200_partition_state_origo_module.reconcile_binance_spot_depth200_partition_state_origo
+        ),
+        'DEPTH200_SNAPSHOTS_TABLE_NAME': (
+            create_binance_spot_depth200_snapshots_table_origo_module.SNAPSHOTS_TABLE_NAME
+        ),
+        'DEPTH200_1M_TABLE_NAME': (
+            create_binance_spot_depth200_1m_table_origo_module.DEPTH200_1M_TABLE_NAME
         ),
         'create_binance_spot_latest_tables_origo': (
             create_binance_spot_latest_tables_origo_module.create_binance_spot_latest_tables_origo

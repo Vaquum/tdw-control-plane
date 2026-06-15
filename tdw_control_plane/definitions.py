@@ -125,6 +125,12 @@ from .assets.create_binance_spot_depth20_1m_table_origo import (
 from .assets.create_binance_spot_depth20_snapshots_table_origo import (
     create_binance_spot_depth20_snapshots_table_origo,
 )
+from .assets.create_binance_spot_depth200_1m_table_origo import (
+    create_binance_spot_depth200_1m_table_origo,
+)
+from .assets.create_binance_spot_depth200_snapshots_table_origo import (
+    create_binance_spot_depth200_snapshots_table_origo,
+)
 from .assets.refresh_binance_spot_klines_origo import refresh_binance_spot_klines_origo
 from .assets.refresh_binance_spot_dollar_klines_origo import (
     refresh_binance_spot_dollar_klines_origo,
@@ -142,6 +148,9 @@ from .assets.refresh_binance_futures_klines_origo import refresh_binance_futures
 from .assets.refresh_binance_spot_depth20_1m_origo import (
     refresh_binance_spot_depth20_1m_origo,
 )
+from .assets.refresh_binance_spot_depth200_1m_origo import (
+    refresh_binance_spot_depth200_1m_origo,
+)
 from .assets.create_aligned_1m_exchange_table_origo import (
     create_aligned_1m_exchange_table_origo,
 )
@@ -158,6 +167,13 @@ from .assets.sync_binance_spot_depth20_snapshots_to_origo import (
 )
 from .assets.reconcile_binance_spot_depth20_partition_state_origo import (
     reconcile_binance_spot_depth20_partition_state_origo,
+)
+from .assets.sync_binance_spot_depth200_snapshots_to_origo import (
+    depth200_minute_partitions,
+    sync_binance_spot_depth200_snapshots_to_origo,
+)
+from .assets.reconcile_binance_spot_depth200_partition_state_origo import (
+    reconcile_binance_spot_depth200_partition_state_origo,
 )
 from .assets.create_binance_spot_latest_tables_origo import (
     create_binance_spot_latest_tables_origo,
@@ -272,6 +288,16 @@ create_binance_spot_depth20_1m_table_origo_job = define_asset_job(
     selection=["create_binance_spot_depth20_1m_table_origo"]
 )
 
+create_binance_spot_depth200_snapshots_table_origo_job = define_asset_job(
+    name='create_binance_spot_depth200_snapshots_table_origo_job',
+    selection=['create_binance_spot_depth200_snapshots_table_origo'],
+)
+
+create_binance_spot_depth200_1m_table_origo_job = define_asset_job(
+    name='create_binance_spot_depth200_1m_table_origo_job',
+    selection=['create_binance_spot_depth200_1m_table_origo'],
+)
+
 create_binance_spot_latest_tables_origo_job = define_asset_job(
     name='create_binance_spot_latest_tables_origo_job',
     selection=['create_binance_spot_latest_tables_origo'],
@@ -331,6 +357,11 @@ _BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION = [
     'refresh_binance_spot_depth20_1m_origo',
 ]
 
+_BINANCE_SPOT_DEPTH200_DATA_SOURCE_SELECTION = [
+    'sync_binance_spot_depth200_snapshots_to_origo',
+    'refresh_binance_spot_depth200_1m_origo',
+]
+
 refresh_binance_futures_data_source_job = define_asset_job(
     name="refresh_binance_futures_data_source_job",
     selection=[
@@ -342,6 +373,11 @@ refresh_binance_futures_data_source_job = define_asset_job(
 refresh_binance_spot_depth20_data_source_job = define_asset_job(
     name='refresh_binance_spot_depth20_data_source_job',
     selection=_BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION,
+)
+
+refresh_binance_spot_depth200_data_source_job = define_asset_job(
+    name='refresh_binance_spot_depth200_data_source_job',
+    selection=_BINANCE_SPOT_DEPTH200_DATA_SOURCE_SELECTION,
 )
 
 refresh_binance_spot_latest_data_source_job = define_asset_job(
@@ -361,9 +397,19 @@ backfill_binance_spot_depth20_data_source_job = define_asset_job(
     selection=_BINANCE_SPOT_DEPTH20_DATA_SOURCE_SELECTION,
 )
 
+backfill_binance_spot_depth200_data_source_job = define_asset_job(
+    name='backfill_binance_spot_depth200_data_source_job',
+    selection=_BINANCE_SPOT_DEPTH200_DATA_SOURCE_SELECTION,
+)
+
 reconcile_binance_spot_depth20_partition_state_origo_job = define_asset_job(
     name='reconcile_binance_spot_depth20_partition_state_origo_job',
     selection=['reconcile_binance_spot_depth20_partition_state_origo'],
+)
+
+reconcile_binance_spot_depth200_partition_state_origo_job = define_asset_job(
+    name='reconcile_binance_spot_depth200_partition_state_origo_job',
+    selection=['reconcile_binance_spot_depth200_partition_state_origo'],
 )
 
 insert_daily_binance_trades_tdw_job = define_asset_job(
@@ -673,6 +719,26 @@ def binance_spot_depth20_1m_schedule(context: ScheduleEvaluationContext) -> RunR
     return RunRequest(
         partition_key=partition_key,
         run_key=f'binance_spot_depth20::{partition_key}',
+    )
+
+
+@schedule(
+    job=refresh_binance_spot_depth200_data_source_job,
+    cron_schedule='* * * * *',
+    execution_timezone='UTC',
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+def binance_spot_depth200_1m_schedule(context: ScheduleEvaluationContext) -> RunRequest | SkipReason:
+    minute_start = _last_completed_minute(context.scheduled_execution_time)
+    partition_key = depth200_minute_partitions.get_partition_key_for_timestamp(
+        minute_start.timestamp()
+    )
+    if not depth200_minute_partitions.has_partition_key(partition_key):
+        return SkipReason(f'Depth200 partition {partition_key} is before the partition start.')
+
+    return RunRequest(
+        partition_key=partition_key,
+        run_key=f'binance_spot_depth200::{partition_key}',
     )
 
 
@@ -1024,6 +1090,8 @@ defs = Definitions(
             create_binance_futures_klines_table_origo,
             create_binance_spot_depth20_snapshots_table_origo,
             create_binance_spot_depth20_1m_table_origo,
+            create_binance_spot_depth200_snapshots_table_origo,
+            create_binance_spot_depth200_1m_table_origo,
             create_binance_spot_latest_tables_origo,
             create_aligned_1m_exchange_table_origo,
             create_binance_trades_complete_view,
@@ -1039,6 +1107,9 @@ defs = Definitions(
             sync_binance_spot_depth20_snapshots_to_origo,
             refresh_binance_spot_depth20_1m_origo,
             reconcile_binance_spot_depth20_partition_state_origo,
+            sync_binance_spot_depth200_snapshots_to_origo,
+            refresh_binance_spot_depth200_1m_origo,
+            reconcile_binance_spot_depth200_partition_state_origo,
             sync_binance_spot_trades_latest_origo,
             refresh_binance_spot_klines_latest_origo,
             refresh_binance_spot_dollar_klines_latest_origo,
@@ -1080,6 +1151,7 @@ defs = Definitions(
         daily_binance_spot_pipeline_schedule,
         daily_binance_futures_pipeline_schedule,
         binance_spot_depth20_1m_schedule,
+        binance_spot_depth200_1m_schedule,
         binance_spot_latest_1m_schedule,
         daily_tdw_pipeline_schedule,
         monthly_tdw_rollforward_schedule,
@@ -1116,6 +1188,8 @@ defs = Definitions(
           create_binance_futures_klines_table_origo_job,
           create_binance_spot_depth20_snapshots_table_origo_job,
           create_binance_spot_depth20_1m_table_origo_job,
+          create_binance_spot_depth200_snapshots_table_origo_job,
+          create_binance_spot_depth200_1m_table_origo_job,
           create_binance_spot_latest_tables_origo_job,
           create_aligned_1m_exchange_table_origo_job,
           create_binance_trades_complete_view_job,
@@ -1125,9 +1199,12 @@ defs = Definitions(
           backfill_binance_spot_trades_origo_job,
           refresh_binance_futures_data_source_job,
           refresh_binance_spot_depth20_data_source_job,
+          refresh_binance_spot_depth200_data_source_job,
           refresh_binance_spot_latest_data_source_job,
           backfill_binance_spot_depth20_data_source_job,
+          backfill_binance_spot_depth200_data_source_job,
           reconcile_binance_spot_depth20_partition_state_origo_job,
+          reconcile_binance_spot_depth200_partition_state_origo_job,
           insert_daily_binance_trades_tdw_job,
           publish_binance_spot_klines_to_huggingface_job,
           publish_binance_spot_15m_klines_to_huggingface_job,
