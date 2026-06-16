@@ -4,6 +4,7 @@ import os
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Protocol
 
 import pyarrow as pa
 import pyarrow.ipc as pa_ipc
@@ -26,12 +27,17 @@ from tdw_control_plane.assets.build_depth_snapshot_store_arrow import (
     depth_snapshot_chunk_relative_path,
     depth_snapshot_store_partition_run_request,
     minute_start_from_partition_key,
+    publish_depth_snapshot_chunk,
     spec_for_depth_snapshot_series,
 )
 
 SOURCE_PARTITION_KEY = '2026-06-14T12:57:00+0000'
 
 SnapshotRow = tuple[int, int, int, list[tuple[float, float]], list[tuple[float, float]]]
+
+
+class _NamedLockFile(Protocol):
+    name: str
 
 
 class FakeClickHouseClient:
@@ -238,6 +244,77 @@ def test_asset_publishes_single_record_batch_ipc(
     )
     assert reader.num_record_batches == 1
     assert reader.read_all().column('ts').num_chunks == 1
+
+
+def test_depth_snapshot_publish_keeps_latest_manifest_monotonic_for_backfilled_chunk(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    newer_partition_key = '2026-06-14T12:58:00+0000'
+    older_partition_key = '2026-06-14T12:57:00+0000'
+    spec = DepthSnapshotSpec('depth20_snapshots', 'test_table', 20)
+    newer_build = build_depth_snapshot_frame(
+        FakeClickHouseClient([_row(2, 20, 200, spec.depth)]),
+        'origo',
+        spec,
+        minute_start_from_partition_key(newer_partition_key),
+    )
+    older_build = build_depth_snapshot_frame(
+        FakeClickHouseClient([_row(1, 10, 100, spec.depth)]),
+        'origo',
+        spec,
+        minute_start_from_partition_key(older_partition_key),
+    )
+
+    monkeypatch.setenv('LOCAL_ARROW_DIR', str(tmp_path))
+
+    newer_outcome = publish_depth_snapshot_chunk(
+        'depth20_snapshots', newer_partition_key, newer_build
+    )
+    older_outcome = publish_depth_snapshot_chunk(
+        'depth20_snapshots', older_partition_key, older_build
+    )
+    manifest_path = series_store_dir('depth20_snapshots') / LATEST_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    older_chunk = series_store_dir('depth20_snapshots') / depth_snapshot_chunk_relative_path(
+        minute_start_from_partition_key(older_partition_key)
+    )
+
+    assert newer_outcome.status == 'published'
+    assert older_outcome.status == 'skipped_not_newer'
+    assert older_chunk.exists()
+    assert manifest['source_partition_key'] == newer_partition_key
+    assert (
+        manifest['chunk']
+        == depth_snapshot_chunk_relative_path(
+            minute_start_from_partition_key(newer_partition_key)
+        ).as_posix()
+    )
+
+
+def test_depth_snapshot_publish_locks_latest_manifest_update(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = DepthSnapshotSpec('depth20_snapshots', 'test_table', 20)
+    build = build_depth_snapshot_frame(
+        FakeClickHouseClient([_row(1, 10, 100, spec.depth)]),
+        'origo',
+        spec,
+        minute_start_from_partition_key(SOURCE_PARTITION_KEY),
+    )
+    lock_calls: list[tuple[str, int]] = []
+
+    def record_lock(lock_file: _NamedLockFile, operation: int) -> None:
+        lock_calls.append((Path(lock_file.name).name, operation))
+
+    monkeypatch.setenv('LOCAL_ARROW_DIR', str(tmp_path))
+    monkeypatch.setattr(depth_store.fcntl, 'flock', record_lock)
+
+    outcome = publish_depth_snapshot_chunk('depth20_snapshots', SOURCE_PARTITION_KEY, build)
+
+    assert outcome.status == 'published'
+    assert lock_calls == [('.depth20_snapshots.lock', depth_store.fcntl.LOCK_EX)]
 
 
 def test_depth_snapshot_partition_run_request_maps_source_jobs() -> None:

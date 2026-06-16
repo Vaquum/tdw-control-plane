@@ -1,3 +1,4 @@
+import fcntl
 import hashlib
 import io
 import json
@@ -297,6 +298,17 @@ def _atomic_write_bytes(target: Path, payload: bytes) -> None:
     os.replace(tmp, target)
 
 
+def _latest_manifest_minute(manifest_path: Path) -> datetime | None:
+    if not manifest_path.exists():
+        return None
+
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    source_partition_key = manifest.get('source_partition_key')
+    if not isinstance(source_partition_key, str):
+        raise RuntimeError(f'{manifest_path} does not contain source_partition_key.')
+    return minute_start_from_partition_key(source_partition_key)
+
+
 def publish_depth_snapshot_chunk(
     series: str,
     source_partition_key: str,
@@ -309,21 +321,29 @@ def publish_depth_snapshot_chunk(
     directory = series_store_dir(series)
     chunk = directory / relative_chunk
     _atomic_write_bytes(chunk, payload)
+    manifest_path = directory / LATEST_MANIFEST_NAME
 
-    manifest = {
-        'series': series,
-        'source_partition_key': source_partition_key,
-        'chunk': relative_chunk.as_posix(),
-        'rows': build.df.height,
-        'source_rows': build.source_rows,
-        'dropped_duplicate_ts': build.dropped_duplicate_ts,
-        'version': version,
-        'updated_at_unix_ns': time.time_ns(),
-    }
-    _atomic_write_bytes(
-        directory / LATEST_MANIFEST_NAME,
-        json.dumps(manifest, sort_keys=True).encode('utf-8') + b'\n',
-    )
+    lock_path = directory / f'.{series}.lock'
+    with open(lock_path, 'w', encoding='utf-8') as lock_file:
+        fcntl.flock(lock_file, fcntl.LOCK_EX)
+        latest_minute = _latest_manifest_minute(manifest_path)
+        if latest_minute is not None and minute_start < latest_minute:
+            return DepthSnapshotChunkPublish('skipped_not_newer', version, relative_chunk.as_posix())
+
+        manifest = {
+            'series': series,
+            'source_partition_key': source_partition_key,
+            'chunk': relative_chunk.as_posix(),
+            'rows': build.df.height,
+            'source_rows': build.source_rows,
+            'dropped_duplicate_ts': build.dropped_duplicate_ts,
+            'version': version,
+            'updated_at_unix_ns': time.time_ns(),
+        }
+        _atomic_write_bytes(
+            manifest_path,
+            json.dumps(manifest, sort_keys=True).encode('utf-8') + b'\n',
+        )
     return DepthSnapshotChunkPublish('published', version, relative_chunk.as_posix())
 
 
