@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -12,15 +13,23 @@ from dagster import materialize
 os.environ.setdefault('CLICKHOUSE_PASSWORD', 'import-guard')
 
 import tdw_control_plane.assets.build_depth_snapshot_store_arrow as depth_store
-from tdw_control_plane.assets.build_bar_store_arrow import LATEST_NAME, series_store_dir
+from tdw_control_plane.assets.build_bar_store_arrow import series_store_dir
 from tdw_control_plane.assets.build_depth_snapshot_store_arrow import (
+    DEPTH20_SOURCE_JOB_NAME,
+    DEPTH200_SOURCE_JOB_NAME,
     DEPTH_SNAPSHOT_PARTITIONS,
     DEPTH_SNAPSHOT_SERIES,
     DepthSnapshotSpec,
+    LATEST_MANIFEST_NAME,
     build_depth_snapshot_frame,
     build_depth_snapshot_store_arrow,
+    depth_snapshot_chunk_relative_path,
+    depth_snapshot_store_partition_run_request,
+    minute_start_from_partition_key,
     spec_for_depth_snapshot_series,
 )
+
+SOURCE_PARTITION_KEY = '2026-06-14T12:57:00+0000'
 
 SnapshotRow = tuple[int, int, int, list[tuple[float, float]], list[tuple[float, float]]]
 
@@ -89,10 +98,19 @@ def test_build_depth_snapshot_frame_shapes_fixed_size_books_and_zero_copy_buffer
         _row(2, 22, 202, spec.depth),
     ]
 
-    build = build_depth_snapshot_frame(FakeClickHouseClient(rows), 'origo', spec)
+    client = FakeClickHouseClient(rows)
+    build = build_depth_snapshot_frame(
+        client,
+        'origo',
+        spec,
+        minute_start_from_partition_key(SOURCE_PARTITION_KEY),
+    )
     frame = build.df
     table = frame.to_arrow()
 
+    assert 'WHERE datetime >=' in client.queries[0]
+    assert '2026-06-14 12:57:00.000' in client.queries[0]
+    assert '2026-06-14 12:58:00.000' in client.queries[0]
     assert frame.columns == ['ts', 'source_timestamp_ms', 'last_update_id', 'bids', 'asks']
     assert frame['ts'].to_list() == [1, 2]
     assert frame['source_timestamp_ms'].to_list() == [10, 22]
@@ -120,7 +138,12 @@ def test_build_depth_snapshot_frame_rejects_empty_source() -> None:
     spec = DepthSnapshotSpec('test_depth_snapshots', 'test_table', 2)
 
     with pytest.raises(RuntimeError, match='No source rows found in test_table'):
-        build_depth_snapshot_frame(FakeClickHouseClient([]), 'origo', spec)
+        build_depth_snapshot_frame(
+            FakeClickHouseClient([]),
+            'origo',
+            spec,
+            minute_start_from_partition_key(SOURCE_PARTITION_KEY),
+        )
 
 
 def test_build_depth_snapshot_frame_rejects_wrong_book_depth() -> None:
@@ -128,7 +151,12 @@ def test_build_depth_snapshot_frame_rejects_wrong_book_depth() -> None:
     bad_rows = [(1, 10, 100, _levels(1, 100.0), _levels(2, 200.0))]
 
     with pytest.raises(RuntimeError, match='Expected 2 bids levels at ts=1, got 1'):
-        build_depth_snapshot_frame(FakeClickHouseClient(bad_rows), 'origo', spec)
+        build_depth_snapshot_frame(
+            FakeClickHouseClient(bad_rows),
+            'origo',
+            spec,
+            minute_start_from_partition_key(SOURCE_PARTITION_KEY),
+        )
 
 
 def test_asset_publishes_depth_snapshot_arrow_file(
@@ -144,16 +172,33 @@ def test_asset_publishes_depth_snapshot_arrow_file(
     monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
     monkeypatch.setattr(depth_store, 'make_clickhouse_client', client_factory)
 
-    result = materialize([build_depth_snapshot_store_arrow], partition_key='depth20_snapshots')
+    result = materialize(
+        [build_depth_snapshot_store_arrow],
+        partition_key='depth20_snapshots',
+        run_config={
+            'ops': {
+                'build_depth_snapshot_store_arrow': {
+                    'config': {'source_partition_key': SOURCE_PARTITION_KEY}
+                }
+            }
+        },
+    )
 
     assert result.success
     assert fake_client.disconnected
     assert 'binance_spot_depth20_snapshots' in fake_client.queries[0]
 
-    latest = series_store_dir('depth20_snapshots') / LATEST_NAME
-    assert latest.is_symlink()
+    manifest_path = series_store_dir('depth20_snapshots') / LATEST_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
+    chunk = series_store_dir('depth20_snapshots') / manifest['chunk']
 
-    table = pa_ipc.open_file(pa.memory_map(str(latest), 'r')).read_all()
+    assert manifest['series'] == 'depth20_snapshots'
+    assert manifest['source_partition_key'] == SOURCE_PARTITION_KEY
+    assert chunk == series_store_dir('depth20_snapshots') / depth_snapshot_chunk_relative_path(
+        minute_start_from_partition_key(SOURCE_PARTITION_KEY)
+    )
+
+    table = pa_ipc.open_file(pa.memory_map(str(chunk), 'r')).read_all()
     assert table.num_rows == 2
     assert table.column_names == ['ts', 'source_timestamp_ms', 'last_update_id', 'bids', 'asks']
     assert table.column('ts').chunk(0).to_numpy(zero_copy_only=True).tolist() == [1, 2]
@@ -173,14 +218,59 @@ def test_asset_publishes_single_record_batch_ipc(
     monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
     monkeypatch.setattr(depth_store, 'make_clickhouse_client', client_factory)
 
-    result = materialize([build_depth_snapshot_store_arrow], partition_key='depth20_snapshots')
+    result = materialize(
+        [build_depth_snapshot_store_arrow],
+        partition_key='depth20_snapshots',
+        run_config={
+            'ops': {
+                'build_depth_snapshot_store_arrow': {
+                    'config': {'source_partition_key': SOURCE_PARTITION_KEY}
+                }
+            }
+        },
+    )
 
     assert result.success
+    manifest_path = series_store_dir('depth20_snapshots') / LATEST_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
     reader = pa_ipc.open_file(
-        pa.memory_map(str(series_store_dir('depth20_snapshots') / LATEST_NAME), 'r')
+        pa.memory_map(str(series_store_dir('depth20_snapshots') / manifest['chunk']), 'r')
     )
     assert reader.num_record_batches == 1
     assert reader.read_all().column('ts').num_chunks == 1
+
+
+def test_depth_snapshot_partition_run_request_maps_source_jobs() -> None:
+    depth20 = depth_snapshot_store_partition_run_request(
+        DEPTH20_SOURCE_JOB_NAME,
+        'run-20',
+        SOURCE_PARTITION_KEY,
+    )
+    depth200 = depth_snapshot_store_partition_run_request(
+        DEPTH200_SOURCE_JOB_NAME,
+        'run-200',
+        SOURCE_PARTITION_KEY,
+    )
+
+    assert depth20.partition_key == 'depth20_snapshots'
+    assert depth20.run_key == 'depth20_snapshots:run-20'
+    assert (
+        depth20.run_config['ops']['build_depth_snapshot_store_arrow']['config'][
+            'source_partition_key'
+        ]
+        == SOURCE_PARTITION_KEY
+    )
+    assert depth200.partition_key == 'depth200_snapshots'
+    assert depth200.run_key == 'depth200_snapshots:run-200'
+    assert (
+        depth200.run_config['ops']['build_depth_snapshot_store_arrow']['config'][
+            'source_partition_key'
+        ]
+        == SOURCE_PARTITION_KEY
+    )
+
+    with pytest.raises(ValueError, match='Unknown depth snapshot source job: other_job'):
+        depth_snapshot_store_partition_run_request('other_job', 'run-other', SOURCE_PARTITION_KEY)
 
 
 def test_definitions_wires_depth_snapshot_arrow_job(origo_definitions_module: object) -> None:
@@ -189,3 +279,24 @@ def test_definitions_wires_depth_snapshot_arrow_job(origo_definitions_module: ob
 
     assert job.name == 'build_depth_snapshot_store_arrow_job'
     assert asset_def.partitions_def.get_partition_keys() == list(DEPTH_SNAPSHOT_SERIES)
+
+
+def test_definitions_wires_depth_snapshot_arrow_sensor_to_depth_source_jobs(
+    origo_definitions_module: object,
+) -> None:
+    sensor = getattr(origo_definitions_module, 'depth_snapshot_store_source_sensor')
+    arrow_job = getattr(origo_definitions_module, 'build_depth_snapshot_store_arrow_job')
+    depth20_job = getattr(origo_definitions_module, 'refresh_binance_spot_depth20_data_source_job')
+    depth200_job = getattr(
+        origo_definitions_module, 'refresh_binance_spot_depth200_data_source_job'
+    )
+
+    assert sensor.name == 'depth_snapshot_store_source_sensor'
+    assert arrow_job.name == 'build_depth_snapshot_store_arrow_job'
+    assert depth20_job.name == DEPTH20_SOURCE_JOB_NAME
+    assert depth200_job.name == DEPTH200_SOURCE_JOB_NAME
+    assert sensor.job_name == arrow_job.name
+    assert {job.name for job in sensor._monitored_jobs} == {
+        DEPTH20_SOURCE_JOB_NAME,
+        DEPTH200_SOURCE_JOB_NAME,
+    }
