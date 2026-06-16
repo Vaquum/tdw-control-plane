@@ -1,3 +1,6 @@
+# v1.20.1 on June 16, 2026
+- Reconcile Binance spot depth20/depth200 live gaps across source history, ClickHouse projections, and Arrow chunks.
+
 # v1.20.0 on June 15, 2026
 - Auto-update Binance spot depth20 and depth200 Arrow snapshots as minute Arrow chunks after their source refresh jobs succeed.
 
