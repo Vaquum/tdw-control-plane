@@ -289,6 +289,26 @@ def test_binance_spot_depth20_schedule_skips_completed_raw_projection_arrow_minu
     assert tick.skip_message == 'Depth20: no source-available raw depth gaps in lookback.'
 
 
+def test_depth_source_has_rows_returns_false_on_request_exception(
+    origo_definitions_module,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_get(*args: object, **kwargs: object) -> object:
+        raise origo_definitions_module.requests.RequestException('source unavailable')
+
+    monkeypatch.setenv('BINANCE_SPOT_DEPTH20_BASE_URL', 'https://source.example')
+    monkeypatch.setenv('BINANCE_SPOT_DEPTH20_AUTH_TOKEN', 'test-token')
+    monkeypatch.setattr(origo_definitions_module.requests, 'get', fail_get)
+
+    assert (
+        origo_definitions_module._depth_source_has_rows(
+            origo_definitions_module.DEPTH20_LIVE_RECONCILIATION_SPEC,
+            _utc(2026, 5, 14, 10, 34),
+        )
+        is False
+    )
+
+
 def test_binance_spot_depth20_projection_repair_schedule_requests_raw_available_gaps(
     origo_definitions_module,
     monkeypatch: pytest.MonkeyPatch,

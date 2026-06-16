@@ -787,20 +787,23 @@ def _depth_source_history_url(base_url: str, minute_start: datetime) -> str:
 
 
 def _depth_source_has_rows(spec: DepthLiveReconciliationSpec, minute_start: datetime) -> bool:
-    response = requests.get(
-        _depth_source_history_url(_required_env_value(spec.base_url_env), minute_start),
-        headers={
-            'Accept': 'application/x-ndjson',
-            'Authorization': f'Bearer {_required_env_value(spec.auth_token_env)}',
-        },
-        timeout=30,
-        stream=True,
-    )
     try:
-        response.raise_for_status()
-        return any(line for line in response.iter_lines())
-    finally:
-        response.close()
+        response = requests.get(
+            _depth_source_history_url(_required_env_value(spec.base_url_env), minute_start),
+            headers={
+                'Accept': 'application/x-ndjson',
+                'Authorization': f'Bearer {_required_env_value(spec.auth_token_env)}',
+            },
+            timeout=30,
+            stream=True,
+        )
+        try:
+            response.raise_for_status()
+            return any(line for line in response.iter_lines())
+        finally:
+            response.close()
+    except requests.RequestException:
+        return False
 
 
 def _depth_snapshot_rows(
