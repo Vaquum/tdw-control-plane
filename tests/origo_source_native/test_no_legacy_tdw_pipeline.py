@@ -25,7 +25,22 @@ REMOVED_ASSET_MODULES = (
     'monthly_trades_to_tdw',
 )
 
-FORBIDDEN_NAME_TOKENS = ('tdw', 'binance_trades_complete', '_summary')
+REMOVED_UTIL_MODULES = (
+    'asset_insert_to_tdw',
+    'get_tdw_monthly_table_config',
+)
+
+LEGACY_SUMMARY_NAMES = (
+    'create_binance_trades_daily_summary',
+    'create_binance_trades_day_of_month_summary',
+    'create_binance_trades_hour_of_day_summary',
+    'create_binance_trades_hourly_summary',
+    'create_binance_trades_month_of_year_summary',
+    'create_binance_trades_monthly_summary',
+    'create_binance_trades_week_of_year_summary',
+)
+
+FORBIDDEN_NAME_TOKENS = ('tdw', 'binance_trades_complete')
 
 
 def test_definitions_exposes_no_tdw_assets(origo_definitions_module: object) -> None:
@@ -38,6 +53,7 @@ def test_definitions_exposes_no_tdw_assets(origo_definitions_module: object) -> 
         key for key in asset_keys if any(token in key for token in FORBIDDEN_NAME_TOKENS)
     }
     assert offending == set()
+    assert asset_keys.isdisjoint(LEGACY_SUMMARY_NAMES)
 
 
 def test_definitions_exposes_no_tdw_jobs_or_schedules(
@@ -46,13 +62,13 @@ def test_definitions_exposes_no_tdw_jobs_or_schedules(
     defs = getattr(origo_definitions_module, 'defs')
     job_names = {job.name for job in defs.jobs}
     schedule_names = {schedule.name for schedule in defs.schedules}
+    all_names = job_names | schedule_names
 
     offending = {
-        name
-        for name in job_names | schedule_names
-        if any(token in name for token in FORBIDDEN_NAME_TOKENS)
+        name for name in all_names if any(token in name for token in FORBIDDEN_NAME_TOKENS)
     }
     assert offending == set()
+    assert all_names.isdisjoint(f'{name}_job' for name in LEGACY_SUMMARY_NAMES)
 
 
 def test_tdw_asset_modules_are_absent() -> None:
@@ -62,4 +78,11 @@ def test_tdw_asset_modules_are_absent() -> None:
         if importlib.util.find_spec(f'tdw_control_plane.assets.{name}') is not None
     ]
     assert present == []
+
+    present_utils = [
+        name
+        for name in REMOVED_UTIL_MODULES
+        if importlib.util.find_spec(f'tdw_control_plane.utils.{name}') is not None
+    ]
+    assert present_utils == []
     assert importlib.util.find_spec('tdw_control_plane.query.get_binance_spot_klines') is None

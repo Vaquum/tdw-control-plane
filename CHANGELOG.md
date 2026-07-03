@@ -1,5 +1,5 @@
 # v2.0.0 on July 2, 2026
-- BREAKING: remove the legacy tdw warehouse pipeline — all tdw table/ingestion/summary assets, the tdw daily and monthly roll-forward schedules, their jobs, and the tdw-only ClickHouse helpers in definitions.
+- BREAKING: remove the legacy tdw warehouse pipeline — all tdw table/ingestion/summary assets, the tdw daily and monthly roll-forward schedules, their jobs, the tdw-only ClickHouse helpers in definitions, and the orphaned tdw utils.
 - Remove the dead `query.get_binance_spot_klines` helper (read from `tdw.binance_trades_complete`) and the tdw module stub in the origo test fixture.
 - Add a regression test that fails any PR reintroducing a tdw asset, job, schedule, or module.
 
