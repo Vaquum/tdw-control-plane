@@ -305,6 +305,20 @@ def _category_total(budget: dict[str, object], cat: str) -> int:
     return _get_int(spec, 'total', f'categories.{cat}.total')
 
 
+def _category_totals(budget: dict[str, object]) -> dict[str, object]:
+    """Every category total in a budget, keyed for equality comparison.
+
+    Used by the root-rename allowance: a package_root change must not be
+    accompanied by any movement in any total.
+    """
+    categories_raw = budget.get('categories')
+    categories = categories_raw if isinstance(categories_raw, dict) else {}
+    return {
+        key: (spec.get('total') if isinstance(spec, dict) else None)
+        for key, spec in categories.items()
+    }
+
+
 def gate(
     budget_head: dict[str, object],
     budget_base: dict[str, object] | None,
@@ -314,12 +328,27 @@ def gate(
     # Structural: head must preserve package_root, must not add excludes,
     # must preserve every category key, must not raise any total.
     if budget_base is not None:
-        if budget_head.get('package_root') != budget_base.get('package_root'):
-            failures.append(
-                f'package_root changed from {budget_base.get("package_root")!r} '
-                f'(base) to {budget_head.get("package_root")!r} (head). The scan '
-                f'surface cannot be narrowed in the same PR that gates.'
+        base_root = budget_base.get('package_root')
+        if budget_head.get('package_root') != base_root:
+            base_root_present = (
+                not isinstance(base_root, str) or (REPO_ROOT / base_root).is_dir()
             )
+            if base_root_present:
+                failures.append(
+                    f'package_root changed from {base_root!r} '
+                    f'(base) to {budget_head.get("package_root")!r} (head). The scan '
+                    f'surface cannot be narrowed in the same PR that gates. A root '
+                    f'change is only legal when the base root directory no longer '
+                    f'exists in the head tree (a true package rename).'
+                )
+            elif _category_totals(budget_base) != _category_totals(budget_head):
+                failures.append(
+                    f'package_root changed from {base_root!r} '
+                    f'(base) to {budget_head.get("package_root")!r} (head) together '
+                    f'with category-total changes. A root change must be '
+                    f'totals-neutral: every total identical to base. Move ratchet '
+                    f'totals in a separate PR.'
+                )
         base_excl = set(budget_base.get('excludes', []) or [])
         head_excl = set(budget_head.get('excludes', []) or [])
         added = head_excl - base_excl
