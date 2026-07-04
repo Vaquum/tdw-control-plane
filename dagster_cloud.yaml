@@ -1,4 +1,0 @@
-locations:
-- code_source:
-    module_name: tdw_control_plane.definitions
-  location_name: trades-warehouse

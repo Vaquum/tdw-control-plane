@@ -10,7 +10,7 @@ from dagster import DefaultScheduleStatus, build_schedule_context
 from .helpers import BINANCE_SPOT_DATASET_SOURCE, ORIGO_DATABASE
 
 TDW_CONTRACT_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1] / 'fixtures' / 'tdw' / 'binance_spot_1m_contract.json'
+    Path(__file__).resolve().parents[1] / 'fixtures' / 'origo' / 'binance_spot_1m_contract.json'
 )
 TDW_KLINE_COLUMN_TYPES = [
     'DateTime',

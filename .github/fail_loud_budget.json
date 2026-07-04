@@ -3,7 +3,6 @@
   "package_root": "tdw_control_plane",
   "excludes": [
     "__pycache__",
-    "quickstart_etl_tests",
     "build",
     "dist"
   ],

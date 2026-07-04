@@ -17,7 +17,7 @@ from .helpers import (
 )
 
 TDW_CONTRACT_FIXTURE_PATH = (
-    Path(__file__).resolve().parents[1] / 'fixtures' / 'tdw' / 'binance_futures_1m_contract.json'
+    Path(__file__).resolve().parents[1] / 'fixtures' / 'origo' / 'binance_futures_1m_contract.json'
 )
 TDW_KLINE_COLUMN_TYPES = [
     'DateTime',
