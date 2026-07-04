@@ -36,7 +36,7 @@ KLINE_CASES = [
         '15m',
         '15-minute',
         900,
-        'tdw_control_plane.assets.publish_binance_spot_15m_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_15m_klines_to_huggingface',
         'publish_binance_spot_15m_klines_to_huggingface',
         'publish_binance_spot_15m_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_15m_klines',
@@ -46,7 +46,7 @@ KLINE_CASES = [
         '30m',
         '30-minute',
         1800,
-        'tdw_control_plane.assets.publish_binance_spot_30m_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_30m_klines_to_huggingface',
         'publish_binance_spot_30m_klines_to_huggingface',
         'publish_binance_spot_30m_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_30m_klines',
@@ -56,7 +56,7 @@ KLINE_CASES = [
         '2h',
         '2-hour',
         7200,
-        'tdw_control_plane.assets.publish_binance_spot_2h_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_2h_klines_to_huggingface',
         'publish_binance_spot_2h_klines_to_huggingface',
         'publish_binance_spot_2h_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_2h_klines',
@@ -157,7 +157,7 @@ def test_publish_time_kline_snapshots_read_origo_spot_klines_projection(
     assert result.success
 
     publish_helper_module = importlib.import_module(
-        'tdw_control_plane.utils.publish_binance_spot_kline_snapshot_to_huggingface'
+        'origo.utils.publish_binance_spot_kline_snapshot_to_huggingface'
     )
 
     class RecordingHfApi:

@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 
 from dagster import AssetExecutionContext, asset
 
-from tdw_control_plane.utils.binance_spot_latest import (
+from origo.utils.binance_spot_latest import (
     BinanceHistoricalTrade,
     LatestTradeBatch,
     fetch_closed_minute_trades,

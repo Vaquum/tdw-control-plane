@@ -45,7 +45,7 @@ from pathlib import Path
 import polars as pl
 from dagster import AssetExecutionContext, Config, RunRequest, StaticPartitionsDefinition, asset
 
-from tdw_control_plane.assets.publish_binance_spot_klines_to_mount import (
+from origo.assets.publish_binance_spot_klines_to_mount import (
     DEFAULT_MOUNT_DIR,
     SPECS,
     MountKlineSpec,

@@ -20,7 +20,7 @@ def test_origo_clickhouse_settings_preserve_compose_defaults(monkeypatch) -> Non
     monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
 
     create_origo_database_module = importlib.import_module(
-        'tdw_control_plane.assets.create_origo_database'
+        'origo.assets.create_origo_database'
     )
     settings = create_origo_database_module._get_clickhouse_settings()
 

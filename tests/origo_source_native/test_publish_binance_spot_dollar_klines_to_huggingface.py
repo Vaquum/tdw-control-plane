@@ -39,7 +39,7 @@ DOLLAR_KLINE_CASES = [
         '1M',
         '1M-dollar',
         1_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_1M_dollar_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_1M_dollar_klines_to_huggingface',
         'publish_binance_spot_1M_dollar_klines_to_huggingface',
         'publish_binance_spot_1M_dollar_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_1M_dollar_klines',
@@ -49,7 +49,7 @@ DOLLAR_KLINE_CASES = [
         '15M',
         '15M-dollar',
         15_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_15M_dollar_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_15M_dollar_klines_to_huggingface',
         'publish_binance_spot_15M_dollar_klines_to_huggingface',
         'publish_binance_spot_15M_dollar_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_15M_dollar_klines',
@@ -59,7 +59,7 @@ DOLLAR_KLINE_CASES = [
         '30M',
         '30M-dollar',
         30_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_30M_dollar_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_30M_dollar_klines_to_huggingface',
         'publish_binance_spot_30M_dollar_klines_to_huggingface',
         'publish_binance_spot_30M_dollar_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_30M_dollar_klines',
@@ -69,7 +69,7 @@ DOLLAR_KLINE_CASES = [
         '60M',
         '60M-dollar',
         60_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_60M_dollar_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_60M_dollar_klines_to_huggingface',
         'publish_binance_spot_60M_dollar_klines_to_huggingface',
         'publish_binance_spot_60M_dollar_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_60M_dollar_klines',
@@ -79,7 +79,7 @@ DOLLAR_KLINE_CASES = [
         '120M',
         '120M-dollar',
         120_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_120M_dollar_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_120M_dollar_klines_to_huggingface',
         'publish_binance_spot_120M_dollar_klines_to_huggingface',
         'publish_binance_spot_120M_dollar_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_120M_dollar_klines',
@@ -89,7 +89,7 @@ DOLLAR_KLINE_CASES = [
         '240M',
         '240M-dollar',
         240_000_000.0,
-        'tdw_control_plane.assets.publish_binance_spot_240M_dollar_klines_to_huggingface',
+        'origo.assets.publish_binance_spot_240M_dollar_klines_to_huggingface',
         'publish_binance_spot_240M_dollar_klines_to_huggingface',
         'publish_binance_spot_240M_dollar_klines_to_huggingface_sensor',
         'vaquum/binance_btcusdt_240M_dollar_klines',
@@ -103,10 +103,10 @@ def test_dollar_kline_query_uses_arrow_parameters_and_configured_database(
 ) -> None:
     monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
     publish_helper_module = importlib.import_module(
-        'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
+        'origo.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
     )
     create_origo_database_module = importlib.import_module(
-        'tdw_control_plane.assets.create_origo_database'
+        'origo.assets.create_origo_database'
     )
     recorded: dict[str, object] = {}
 
@@ -183,7 +183,7 @@ def test_dollar_kline_query_rejects_unsafe_sql_inputs(
 ) -> None:
     monkeypatch.setenv('CLICKHOUSE_PASSWORD', 'test-password')
     publish_helper_module = importlib.import_module(
-        'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
+        'origo.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
     )
 
     with pytest.raises(ValueError, match='Invalid ClickHouse database name'):
@@ -220,7 +220,7 @@ def test_dollar_kline_export_preserves_clickhouse_timestamp_scale(
     assert result.success
 
     publish_helper_module = importlib.import_module(
-        'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
+        'origo.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
     )
     data = publish_helper_module._get_binance_spot_dollar_klines(
         dollar_size=1_000_000.0,
@@ -337,7 +337,7 @@ def test_publish_dollar_kline_snapshots_read_origo_dollar_klines_with_shared_hel
     assert result.success
 
     publish_helper_module = importlib.import_module(
-        'tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
+        'origo.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface'
     )
 
     class RecordingHfApi:

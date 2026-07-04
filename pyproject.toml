@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "origo"
-version = "2.0.1"
+version = "3.0.0"
 description = "Origo control plane"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -29,11 +29,11 @@ dev = ["dagster-webserver", "pytest"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["tdw_control_plane*"]
+include = ["origo*"]
 
 [tool.dagster]
-module_name = "tdw_control_plane.definitions"
-code_location_name = "tdw_control_plane"
+module_name = "origo.definitions"
+code_location_name = "origo"
 
 # --------------------------------------------------------------------
 # Pyright strict configuration.
@@ -55,7 +55,7 @@ code_location_name = "tdw_control_plane"
 [tool.pyright]
 pythonVersion = "3.11"
 typeCheckingMode = "strict"
-include = ["tdw_control_plane"]
+include = ["origo"]
 exclude = [
   "**/__pycache__",
   "build",
@@ -105,4 +105,4 @@ ignore = [
 ]
 
 [tool.ruff.lint.isort]
-known-first-party = ["tdw_control_plane"]
+known-first-party = ["origo"]

@@ -75,14 +75,18 @@ def test_tdw_asset_modules_are_absent() -> None:
     present = [
         name
         for name in REMOVED_ASSET_MODULES
-        if importlib.util.find_spec(f'tdw_control_plane.assets.{name}') is not None
+        if importlib.util.find_spec(f'origo.assets.{name}') is not None
     ]
     assert present == []
 
     present_utils = [
         name
         for name in REMOVED_UTIL_MODULES
-        if importlib.util.find_spec(f'tdw_control_plane.utils.{name}') is not None
+        if importlib.util.find_spec(f'origo.utils.{name}') is not None
     ]
     assert present_utils == []
-    assert importlib.util.find_spec('tdw_control_plane.query.get_binance_spot_klines') is None
+    assert importlib.util.find_spec('origo.query.get_binance_spot_klines') is None
+
+
+def test_legacy_package_is_absent() -> None:
+    assert importlib.util.find_spec('tdw_control_plane') is None

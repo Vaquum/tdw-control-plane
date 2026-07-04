@@ -13,9 +13,9 @@ from dagster import materialize
 
 os.environ.setdefault('CLICKHOUSE_PASSWORD', 'import-guard')
 
-import tdw_control_plane.assets.build_depth_snapshot_store_arrow as depth_store
-from tdw_control_plane.assets.build_bar_store_arrow import series_store_dir
-from tdw_control_plane.assets.build_depth_snapshot_store_arrow import (
+import origo.assets.build_depth_snapshot_store_arrow as depth_store
+from origo.assets.build_bar_store_arrow import series_store_dir
+from origo.assets.build_depth_snapshot_store_arrow import (
     DEPTH20_SOURCE_JOB_NAME,
     DEPTH200_SOURCE_JOB_NAME,
     DEPTH_SNAPSHOT_PARTITIONS,

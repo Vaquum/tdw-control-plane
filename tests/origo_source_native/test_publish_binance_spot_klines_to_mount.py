@@ -11,12 +11,12 @@ import pytest
 from dagster import materialize
 from polars.testing import assert_frame_equal
 
-# tdw_control_plane.assets.__init__ reads CLICKHOUSE_PASSWORD at import time; provide a
+# origo.assets.__init__ reads CLICKHOUSE_PASSWORD at import time; provide a
 # placeholder so test collection succeeds. ClickHouse-backed tests receive the real
 # container password from the origo fixtures (monkeypatch.setenv) before any query runs.
 os.environ.setdefault("CLICKHOUSE_PASSWORD", "import-guard")
 
-from tdw_control_plane.assets.publish_binance_spot_klines_to_mount import (  # noqa: E402
+from origo.assets.publish_binance_spot_klines_to_mount import (  # noqa: E402
     MOUNT_EXPORT_ASSETS,
     SPECS,
     MountKlineSpec,
@@ -24,7 +24,7 @@ from tdw_control_plane.assets.publish_binance_spot_klines_to_mount import (  # n
     months_for_run,
     write_month_atomic,
 )
-from tdw_control_plane.query.binance_spot_kline_rollups import dollar_month, time_month  # noqa: E402
+from origo.query.binance_spot_kline_rollups import dollar_month, time_month  # noqa: E402
 
 from .helpers import ORIGO_DATABASE  # noqa: E402
 
@@ -38,14 +38,14 @@ _DATETIME_COLUMNS = ["start_datetime", "end_datetime"]
 
 def _hf_time_projection() -> Callable[..., pl.DataFrame]:
     module = importlib.import_module(
-        "tdw_control_plane.utils.publish_binance_spot_kline_snapshot_to_huggingface"
+        "origo.utils.publish_binance_spot_kline_snapshot_to_huggingface"
     )
     return getattr(module, "_get_binance_spot_klines_from_1m_projection")
 
 
 def _hf_dollar_projection() -> Callable[..., pl.DataFrame]:
     module = importlib.import_module(
-        "tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface"
+        "origo.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface"
     )
     return getattr(module, "_get_binance_spot_dollar_klines")
 

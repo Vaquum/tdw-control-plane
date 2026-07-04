@@ -14,14 +14,14 @@ import polars as pl
 from dagster import AssetExecutionContext
 from huggingface_hub import HfApi
 
-from tdw_control_plane.assets.create_origo_database import (
+from origo.assets.create_origo_database import (
     ClickHouseSettings,
     get_clickhouse_settings,
 )
-from tdw_control_plane.assets.create_binance_spot_dollar_klines_table_origo import (
+from origo.assets.create_binance_spot_dollar_klines_table_origo import (
     DOLLAR_KLINES_TABLE_NAME,
 )
-from tdw_control_plane.assets.refresh_binance_spot_dollar_klines_origo import (
+from origo.assets.refresh_binance_spot_dollar_klines_origo import (
     DOLLAR_KLINE_SIZE,
 )
 
