@@ -3,7 +3,7 @@
   "name": "Protect-Main",
   "target": "branch",
   "source_type": "Repository",
-  "source": "Vaquum/tdw-control-plane",
+  "source": "Vaquum/Origo",
   "enforcement": "active",
   "conditions": {
     "ref_name": {
@@ -102,10 +102,10 @@
   "current_user_can_bypass": "never",
   "_links": {
     "self": {
-      "href": "https://api.github.com/repos/Vaquum/tdw-control-plane/rulesets/5406599"
+      "href": "https://api.github.com/repos/Vaquum/Origo/rulesets/5406599"
     },
     "html": {
-      "href": "https://github.com/Vaquum/tdw-control-plane/rules/5406599"
+      "href": "https://github.com/Vaquum/Origo/rules/5406599"
     }
   }
 }
