@@ -19,12 +19,12 @@ jobs:
     name: Build Images And Deploy
     runs-on: ubuntu-latest
     env:
-      TDW_HOST: ${{ vars.TDW_HOST }}
-      TDW_USER: ${{ vars.TDW_USER }}
+      ORIGO_HOST: ${{ vars.ORIGO_HOST }}
+      ORIGO_USER: ${{ vars.ORIGO_USER }}
       DEPLOY_DIR: ${{ vars.DEPLOY_DIR }}
-      PROJECT_NAME: ${{ vars.TDW_PROJECT_NAME }}
+      PROJECT_NAME: ${{ vars.ORIGO_PROJECT_NAME }}
       HUGGINGFACE_DATASET_REPO_ID: ${{ vars.HUGGINGFACE_DATASET_REPO_ID }}
-      TDW_KNOWN_HOSTS: ${{ vars.TDW_KNOWN_HOSTS }}
+      ORIGO_KNOWN_HOSTS: ${{ vars.ORIGO_KNOWN_HOSTS }}
 
     steps:
       - name: Checkout repository
@@ -32,19 +32,19 @@ jobs:
 
       - name: Validate deploy configuration
         run: |
-          test -n "$TDW_HOST"
-          test -n "$TDW_USER"
+          test -n "$ORIGO_HOST"
+          test -n "$ORIGO_USER"
           test -n "$DEPLOY_DIR"
           test -n "$PROJECT_NAME"
           test -n "$HUGGINGFACE_DATASET_REPO_ID"
-          test -n "$TDW_KNOWN_HOSTS"
+          test -n "$ORIGO_KNOWN_HOSTS"
 
       - name: Set image names
         run: |
-          echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-dagster:${GITHUB_SHA}" >> "$GITHUB_ENV"
-          echo "APP_IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-dagster:latest" >> "$GITHUB_ENV"
-          echo "CLICKHOUSE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-clickhouse:${GITHUB_SHA}" >> "$GITHUB_ENV"
-          echo "CLICKHOUSE_IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/tdw-control-plane-clickhouse:latest" >> "$GITHUB_ENV"
+          echo "APP_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/origo-dagster:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "APP_IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/origo-dagster:latest" >> "$GITHUB_ENV"
+          echo "CLICKHOUSE_IMAGE=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/origo-clickhouse:${GITHUB_SHA}" >> "$GITHUB_ENV"
+          echo "CLICKHOUSE_IMAGE_LATEST=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/origo-clickhouse:latest" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -92,19 +92,19 @@ jobs:
       - name: Start SSH agent
         uses: webfactory/ssh-agent@v0.9.0
         with:
-          ssh-private-key: ${{ secrets.TDW_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.ORIGO_PRIVATE_KEY }}
 
       - name: Configure pinned deployment host key
         run: |
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
-          printf '%s\n' "$TDW_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$ORIGO_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
       - name: Upload deploy compose file
         run: |
-          ssh "$TDW_USER@$TDW_HOST" "mkdir -p '$DEPLOY_DIR'"
-          scp docker-compose.deploy.yml "$TDW_USER@$TDW_HOST:$DEPLOY_DIR/docker-compose.deploy.yml"
+          ssh "$ORIGO_USER@$ORIGO_HOST" "mkdir -p '$DEPLOY_DIR'"
+          scp docker-compose.deploy.yml "$ORIGO_USER@$ORIGO_HOST:$DEPLOY_DIR/docker-compose.deploy.yml"
 
       - name: Deploy updated images
         env:
@@ -117,7 +117,7 @@ jobs:
           BINANCE_SPOT_DEPTH200_BASE_URL: ${{ secrets.BINANCE_SPOT_DEPTH200_BASE_URL }}
           BINANCE_SPOT_DEPTH200_AUTH_TOKEN: ${{ secrets.BINANCE_SPOT_DEPTH200_AUTH_TOKEN }}
         run: |
-          DEPLOY_ENV_FILE="/tmp/tdw-deploy.env"
+          DEPLOY_ENV_FILE="/tmp/origo-deploy.env"
           trap 'rm -f "$DEPLOY_ENV_FILE"' EXIT
 
           python3 - <<'PY' > "$DEPLOY_ENV_FILE"
@@ -143,10 +143,10 @@ jobs:
               print(f"{key}={shlex.quote(value)}")
           PY
 
-          scp "$DEPLOY_ENV_FILE" "$TDW_USER@$TDW_HOST:$DEPLOY_DIR/.deploy.env"
+          scp "$DEPLOY_ENV_FILE" "$ORIGO_USER@$ORIGO_HOST:$DEPLOY_DIR/.deploy.env"
 
-          ssh "$TDW_USER@$TDW_HOST" \
-            "DEPLOY_DIR='$DEPLOY_DIR' TDW_HOST='$TDW_HOST' bash -s" <<'REMOTE'
+          ssh "$ORIGO_USER@$ORIGO_HOST" \
+            "DEPLOY_DIR='$DEPLOY_DIR' ORIGO_HOST='$ORIGO_HOST' bash -s" <<'REMOTE'
           set -euo pipefail
 
           export DOCKER_CONFIG

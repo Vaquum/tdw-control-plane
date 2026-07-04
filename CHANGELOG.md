@@ -1,3 +1,6 @@
+# v3.0.1 on July 4, 2026
+- Adopt the Origo identity in CI and deploy: repo renamed to Vaquum/Origo, deploy workflow variables `TDW_*` -> `ORIGO_*` (values unchanged; server names intentionally stay tdw), fresh `ORIGO_PRIVATE_KEY` deploy key, GHCR images `origo-dagster`/`origo-clickhouse` (legacy packages retained for rollback), slice-gate help text and ruleset fixtures updated.
+
 # v3.0.0 on July 4, 2026
 - BREAKING: rename the Python package `tdw_control_plane` to `origo` — module imports, Dagster workspace/code-location, packaging config, typing/fail-loud gate roots, and the deploy smoke test all move; the Dagster code location becomes `origo.definitions` (instigator state restarts via in-code RUNNING defaults).
 
