@@ -22,16 +22,16 @@ from dagster import (
     asset,
 )
 
-from tdw_control_plane.assets.build_bar_store_arrow import BarSeriesBuild, series_store_dir
-from tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo import (
+from origo.assets.build_bar_store_arrow import BarSeriesBuild, series_store_dir
+from origo.assets.create_binance_spot_depth20_snapshots_table_origo import (
     ClickHouseClient,
     get_clickhouse_settings,
     make_clickhouse_client,
 )
-from tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo import (
+from origo.assets.create_binance_spot_depth20_snapshots_table_origo import (
     SNAPSHOTS_TABLE_NAME as DEPTH20_SNAPSHOTS_TABLE_NAME,
 )
-from tdw_control_plane.assets.create_binance_spot_depth200_snapshots_table_origo import (
+from origo.assets.create_binance_spot_depth200_snapshots_table_origo import (
     SNAPSHOTS_TABLE_NAME as DEPTH200_SNAPSHOTS_TABLE_NAME,
 )
 

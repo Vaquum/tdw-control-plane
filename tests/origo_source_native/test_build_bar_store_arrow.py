@@ -16,7 +16,7 @@ from polars.testing import assert_frame_equal
 # tests below need no container -- the placeholder just lets collection succeed.
 os.environ.setdefault("CLICKHOUSE_PASSWORD", "import-guard")
 
-from tdw_control_plane.assets.build_bar_store_arrow import (  # noqa: E402
+from origo.assets.build_bar_store_arrow import (  # noqa: E402
     BAR_STORE_PARTITIONS,
     BAR_STORE_SERIES,
     LATEST_NAME,
@@ -31,7 +31,7 @@ from tdw_control_plane.assets.build_bar_store_arrow import (  # noqa: E402
     series_store_dir,
     spec_for_series,
 )
-from tdw_control_plane.assets.publish_binance_spot_klines_to_mount import (  # noqa: E402
+from origo.assets.publish_binance_spot_klines_to_mount import (  # noqa: E402
     MountKlineSpec,
 )
 

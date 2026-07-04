@@ -221,109 +221,109 @@ def origo_test_env(
 
 @pytest.fixture()
 def origo_assets(origo_test_env: dict[str, str]) -> dict[str, Any]:
-    create_origo_database_module = _reload_module('tdw_control_plane.assets.create_origo_database')
+    create_origo_database_module = _reload_module('origo.assets.create_origo_database')
     create_binance_trades_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_trades_table_origo'
+        'origo.assets.create_binance_trades_table_origo'
     )
     create_binance_futures_trades_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_futures_trades_table_origo'
+        'origo.assets.create_binance_futures_trades_table_origo'
     )
-    daily_trades_to_origo_module = _reload_module('tdw_control_plane.assets.daily_trades_to_origo')
+    daily_trades_to_origo_module = _reload_module('origo.assets.daily_trades_to_origo')
     daily_futures_trades_to_origo_module = _reload_module(
-        'tdw_control_plane.assets.daily_futures_trades_to_origo'
+        'origo.assets.daily_futures_trades_to_origo'
     )
     create_binance_spot_klines_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_klines_table_origo'
+        'origo.assets.create_binance_spot_klines_table_origo'
     )
     create_binance_spot_dollar_klines_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_dollar_klines_table_origo'
+        'origo.assets.create_binance_spot_dollar_klines_table_origo'
     )
     create_binance_spot_dollar_imbalance_klines_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_dollar_imbalance_klines_table_origo'
+        'origo.assets.create_binance_spot_dollar_imbalance_klines_table_origo'
     )
     create_binance_spot_volume_klines_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_volume_klines_table_origo'
+        'origo.assets.create_binance_spot_volume_klines_table_origo'
     )
     create_binance_spot_tick_klines_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_tick_klines_table_origo'
+        'origo.assets.create_binance_spot_tick_klines_table_origo'
     )
     create_binance_futures_klines_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_futures_klines_table_origo'
+        'origo.assets.create_binance_futures_klines_table_origo'
     )
     refresh_binance_spot_klines_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_klines_origo'
+        'origo.assets.refresh_binance_spot_klines_origo'
     )
     refresh_binance_spot_dollar_klines_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_dollar_klines_origo'
+        'origo.assets.refresh_binance_spot_dollar_klines_origo'
     )
     refresh_binance_spot_dollar_imbalance_klines_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_dollar_imbalance_klines_origo'
+        'origo.assets.refresh_binance_spot_dollar_imbalance_klines_origo'
     )
     refresh_binance_spot_volume_klines_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_volume_klines_origo'
+        'origo.assets.refresh_binance_spot_volume_klines_origo'
     )
     refresh_binance_spot_tick_klines_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_tick_klines_origo'
+        'origo.assets.refresh_binance_spot_tick_klines_origo'
     )
     refresh_binance_futures_klines_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_futures_klines_origo'
+        'origo.assets.refresh_binance_futures_klines_origo'
     )
     create_aligned_1m_exchange_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_aligned_1m_exchange_table_origo'
+        'origo.assets.create_aligned_1m_exchange_table_origo'
     )
     refresh_aligned_1m_exchange_from_binance_spot_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_spot_origo'
+        'origo.assets.refresh_aligned_1m_exchange_from_binance_spot_origo'
     )
     refresh_aligned_1m_exchange_from_binance_futures_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_aligned_1m_exchange_from_binance_futures_origo'
+        'origo.assets.refresh_aligned_1m_exchange_from_binance_futures_origo'
     )
     create_binance_spot_depth20_snapshots_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_depth20_snapshots_table_origo'
+        'origo.assets.create_binance_spot_depth20_snapshots_table_origo'
     )
     sync_binance_spot_depth20_snapshots_to_origo_module = _reload_module(
-        'tdw_control_plane.assets.sync_binance_spot_depth20_snapshots_to_origo'
+        'origo.assets.sync_binance_spot_depth20_snapshots_to_origo'
     )
     create_binance_spot_depth20_1m_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_depth20_1m_table_origo'
+        'origo.assets.create_binance_spot_depth20_1m_table_origo'
     )
     refresh_binance_spot_depth20_1m_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_depth20_1m_origo'
+        'origo.assets.refresh_binance_spot_depth20_1m_origo'
     )
     reconcile_binance_spot_depth20_partition_state_origo_module = _reload_module(
-        'tdw_control_plane.assets.reconcile_binance_spot_depth20_partition_state_origo'
+        'origo.assets.reconcile_binance_spot_depth20_partition_state_origo'
     )
     create_binance_spot_depth200_snapshots_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_depth200_snapshots_table_origo'
+        'origo.assets.create_binance_spot_depth200_snapshots_table_origo'
     )
     sync_binance_spot_depth200_snapshots_to_origo_module = _reload_module(
-        'tdw_control_plane.assets.sync_binance_spot_depth200_snapshots_to_origo'
+        'origo.assets.sync_binance_spot_depth200_snapshots_to_origo'
     )
     create_binance_spot_depth200_1m_table_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_depth200_1m_table_origo'
+        'origo.assets.create_binance_spot_depth200_1m_table_origo'
     )
     refresh_binance_spot_depth200_1m_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_depth200_1m_origo'
+        'origo.assets.refresh_binance_spot_depth200_1m_origo'
     )
     reconcile_binance_spot_depth200_partition_state_origo_module = _reload_module(
-        'tdw_control_plane.assets.reconcile_binance_spot_depth200_partition_state_origo'
+        'origo.assets.reconcile_binance_spot_depth200_partition_state_origo'
     )
     create_binance_spot_latest_tables_origo_module = _reload_module(
-        'tdw_control_plane.assets.create_binance_spot_latest_tables_origo'
+        'origo.assets.create_binance_spot_latest_tables_origo'
     )
     sync_binance_spot_trades_latest_origo_module = _reload_module(
-        'tdw_control_plane.assets.sync_binance_spot_trades_latest_origo'
+        'origo.assets.sync_binance_spot_trades_latest_origo'
     )
     refresh_binance_spot_klines_latest_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_klines_latest_origo'
+        'origo.assets.refresh_binance_spot_klines_latest_origo'
     )
     refresh_binance_spot_dollar_klines_latest_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_dollar_klines_latest_origo'
+        'origo.assets.refresh_binance_spot_dollar_klines_latest_origo'
     )
     refresh_binance_spot_latest_cuts_origo_module = _reload_module(
-        'tdw_control_plane.assets.refresh_binance_spot_latest_cuts_origo'
+        'origo.assets.refresh_binance_spot_latest_cuts_origo'
     )
     cleanup_binance_spot_latest_origo_module = _reload_module(
-        'tdw_control_plane.assets.cleanup_binance_spot_latest_origo'
+        'origo.assets.cleanup_binance_spot_latest_origo'
     )
 
     return {
@@ -705,4 +705,4 @@ def origo_definitions_module(
     monkeypatch: pytest.MonkeyPatch,
     origo_test_env: dict[str, str],
 ) -> Any:
-    return _reload_module('tdw_control_plane.definitions')
+    return _reload_module('origo.definitions')

@@ -69,7 +69,7 @@ def _is_excluded(relative_path: Path, excludes: list[str]) -> bool:
     """Path-part match, not substring. An exclude entry matches only if
     its parts appear as a contiguous slice of the path's parts. This
     prevents an entry like 'dist' from spuriously matching a file such
-    as 'tdw_control_plane/distance.py'."""
+    as 'origo/distance.py'."""
     parts = relative_path.parts
     for ex in excludes:
         ex_parts = Path(ex).parts
@@ -311,7 +311,7 @@ REQUIRED_PYRIGHT: Final[dict[str, object]] = {
 # The `include` list pyright must analyze. Shrinking this to an empty
 # list or a non-existent path drops filesAnalyzed to zero, trivially
 # passing the error-count ratchet. Gate asserts exact match.
-REQUIRED_PYRIGHT_INCLUDE: Final[list[str]] = ['tdw_control_plane']
+REQUIRED_PYRIGHT_INCLUDE: Final[list[str]] = ['origo']
 
 FORBIDDEN_VALUES: Final[frozenset[object]] = frozenset(
     {'none', 'warning', 'information', 'info', 'false', False}
@@ -852,7 +852,7 @@ def update_budget(pyright_json_path: str | None) -> None:
     else:
         budget = {
             'schema_version': 2,
-            'package_root': 'tdw_control_plane',
+            'package_root': 'origo',
             'excludes': ['__pycache__', 'build', 'dist'],
             'patterns': {k: dict(v) for k, v in DEFAULT_PATTERNS.items()},
             'any_references': {'total': 0},

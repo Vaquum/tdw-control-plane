@@ -406,7 +406,7 @@ def gate(
 
 DEFAULT_BUDGET: Final[dict[str, object]] = {
     'schema_version': 1,
-    'package_root': 'tdw_control_plane',
+    'package_root': 'origo',
     'excludes': ['__pycache__', 'build', 'dist'],
     'categories': {cat: {'total': 0} for cat in CATEGORIES},
 }

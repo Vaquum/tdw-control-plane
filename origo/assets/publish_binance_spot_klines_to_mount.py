@@ -20,7 +20,7 @@ from typing import Literal
 import polars as pl
 from dagster import AssetExecutionContext, AssetsDefinition, Config, asset
 
-from tdw_control_plane.query.binance_spot_kline_rollups import (
+from origo.query.binance_spot_kline_rollups import (
     dollar_month,
     dollar_open_day_gap_days,
     time_month,

@@ -1,7 +1,7 @@
 from dagster import AssetExecutionContext, asset
 
-from tdw_control_plane.assets.daily_trades_to_origo import daily_partitions
-from tdw_control_plane.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface import (
+from origo.assets.daily_trades_to_origo import daily_partitions
+from origo.utils.publish_binance_spot_dollar_kline_snapshot_to_huggingface import (
     publish_binance_spot_dollar_kline_snapshot_to_huggingface,
 )
 

@@ -1,3 +1,6 @@
+# v3.0.0 on July 4, 2026
+- BREAKING: rename the Python package `tdw_control_plane` to `origo` — module imports, Dagster workspace/code-location, packaging config, typing/fail-loud gate roots, and the deploy smoke test all move; the Dagster code location becomes `origo.definitions` (instigator state restarts via in-code RUNNING defaults).
+
 # v2.1.0 on July 4, 2026
 - Allow `package_root` to change in the typing and fail-loud budget-source ratchets only when the base root directory no longer exists in the head tree AND every ratchet total is identical to base (a totals-neutral rename); narrowing onto a subtree while the old root exists stays blocked, and no ratchet total can move in the same PR as a root change. Residual risk accepted and documented: a rename-shaped PR can still relocate files outside the scan surface — as any PR always could by moving files out of the root — and operator review remains the backstop for that.
 

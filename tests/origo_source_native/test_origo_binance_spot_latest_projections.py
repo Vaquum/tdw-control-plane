@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from dagster import DefaultScheduleStatus, build_schedule_context, materialize
 
-from tdw_control_plane.utils import binance_spot_latest as latest_utils
-from tdw_control_plane.utils.binance_spot_latest import (
+from origo.utils import binance_spot_latest as latest_utils
+from origo.utils.binance_spot_latest import (
     BinanceHistoricalTrade,
     LatestTradeBatch,
     LatestTradeIdBounds,
