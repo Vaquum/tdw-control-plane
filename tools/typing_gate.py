@@ -564,6 +564,25 @@ def gate_pyright_errors(
 # its own ceiling and pass.
 # -------------------------------------------------------------------
 
+def _ratchet_totals(budget: dict[str, object]) -> dict[str, object]:
+    """Every ratchet total in a budget, keyed for equality comparison.
+
+    Used by the root-rename allowance: a package_root change must not be
+    accompanied by any movement in any total, or a rename-shaped PR could
+    smuggle ratchet changes past review.
+    """
+    patterns_raw = budget.get('patterns')
+    patterns = patterns_raw if isinstance(patterns_raw, dict) else {}
+    totals: dict[str, object] = {}
+    for key, spec in patterns.items():
+        totals[f'patterns.{key}'] = spec.get('total') if isinstance(spec, dict) else None
+    for section in ('pyright_errors', 'any_references'):
+        section_raw = budget.get(section)
+        section_dict = section_raw if isinstance(section_raw, dict) else {}
+        totals[section] = section_dict.get('total')
+    return totals
+
+
 def gate_budget_source(
     base_budget_path: str | None,
     bootstrap: bool,
@@ -632,16 +651,23 @@ def gate_budget_source(
     #   Adding an exclude hides files from the ratchet.
     base_root = base_budget.get('package_root')
     head_root = head_budget.get('package_root')
-    if base_root != head_root and (
-        not isinstance(base_root, str) or (REPO_ROOT / base_root).is_dir()
-    ):
-        failures.append(
-            f'package_root changed from {base_root!r} (base) to '
-            f'{head_root!r} (head). The scan surface cannot be narrowed '
-            f'by the PR it gates. A root change is only legal when the '
-            f'base root directory no longer exists in the head tree '
-            f'(a true package rename).'
-        )
+    if base_root != head_root:
+        base_root_present = not isinstance(base_root, str) or (REPO_ROOT / base_root).is_dir()
+        if base_root_present:
+            failures.append(
+                f'package_root changed from {base_root!r} (base) to '
+                f'{head_root!r} (head). The scan surface cannot be narrowed '
+                f'by the PR it gates. A root change is only legal when the '
+                f'base root directory no longer exists in the head tree '
+                f'(a true package rename).'
+            )
+        elif _ratchet_totals(base_budget) != _ratchet_totals(head_budget):
+            failures.append(
+                f'package_root changed from {base_root!r} (base) to '
+                f'{head_root!r} (head) together with ratchet-total changes. '
+                f'A root change must be totals-neutral: every total identical '
+                f'to base. Move ratchet totals in a separate PR.'
+            )
 
     base_excludes_raw = base_budget.get('excludes', [])
     head_excludes_raw = head_budget.get('excludes', [])

@@ -1,5 +1,5 @@
 # v2.1.0 on July 4, 2026
-- Allow `package_root` to change in the typing and fail-loud budget-source ratchets when the base root directory no longer exists in the head tree (a true package rename); narrowing onto a subtree while the old root exists stays blocked, now with regression tests.
+- Allow `package_root` to change in the typing and fail-loud budget-source ratchets only when the base root directory no longer exists in the head tree AND every ratchet total is identical to base (a totals-neutral rename); narrowing onto a subtree while the old root exists stays blocked, and no ratchet total can move in the same PR as a root change. Residual risk accepted and documented: a rename-shaped PR can still relocate files outside the scan surface — as any PR always could by moving files out of the root — and operator review remains the backstop for that.
 
 # v2.0.1 on July 4, 2026
 - Rebrand repo metadata to Origo: dist name, description, README, slice template prose, dev image tag, test fixtures dir and container prefix; remove the never-existing `quickstart_etl_tests` ghost path from pyproject, budgets, gates, and the lint contract; delete vestigial `dagster_cloud.yaml`.
