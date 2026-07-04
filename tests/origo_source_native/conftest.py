@@ -118,7 +118,7 @@ def clickhouse_settings() -> dict[str, str]:
     if shutil.which('docker') is None:
         pytest.fail('docker CLI is required for tests/origo_source_native')
 
-    container_name = f'tdw-origo-tests-{uuid4().hex[:12]}'
+    container_name = f'origo-tests-{uuid4().hex[:12]}'
     native_port = _free_port()
     http_port = _free_port()
     password = 'test-password'

@@ -20,7 +20,7 @@ services:
 
   dagit:
     build: .
-    image: trades-warehouse-dagster:latest
+    image: origo-dagster:latest
     ports:
       - "4000:3000"
     environment:
@@ -39,7 +39,7 @@ services:
 
   dagster:
     build: .
-    image: trades-warehouse-dagster:latest
+    image: origo-dagster:latest
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app

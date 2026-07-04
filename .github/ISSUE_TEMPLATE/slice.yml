@@ -1,5 +1,5 @@
 name: Slice
-description: Plan, deliver, and close one tdw-control-plane slice against mechanical proof.
+description: Plan, deliver, and close one Origo slice against mechanical proof.
 labels:
   - slice
   - planning

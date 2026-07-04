@@ -1,3 +1,7 @@
+# v2.0.1 on July 4, 2026
+- Rebrand repo metadata to Origo: dist name, description, README, slice template prose, dev image tag, test fixtures dir and container prefix; remove the never-existing `quickstart_etl_tests` ghost path from pyproject, budgets, gates, and the lint contract; delete vestigial `dagster_cloud.yaml`.
+- Pin `default_status=RUNNING` on all 12 HuggingFace asset sensors and add a regression test asserting every sensor defaults to RUNNING.
+
 # v2.0.0 on July 2, 2026
 - BREAKING: remove the legacy tdw warehouse pipeline — all tdw table/ingestion/summary assets, the tdw daily and monthly roll-forward schedules, their jobs, the tdw-only ClickHouse helpers in definitions, and the orphaned tdw utils.
 - Remove the dead `query.get_binance_spot_klines` helper (read from `tdw.binance_trades_complete`) and the tdw module stub in the origo test fixture.

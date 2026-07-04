@@ -4,7 +4,7 @@
   <br>
 </h1>
 
-<h3 align="center">TDW Control Plane</h3>
+<h3 align="center">Origo</h3>
 
 <p align="center">
   <a href="#description">Description</a> •
@@ -16,7 +16,7 @@
 
 ## Description
 
-Control plane for `trade-warehouse` (tdw). 
+Control plane for the Origo data platform.
 
 ## Owner
 
