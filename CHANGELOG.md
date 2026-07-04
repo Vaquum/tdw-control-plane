@@ -1,3 +1,6 @@
+# v2.1.0 on July 4, 2026
+- Allow `package_root` to change in the typing and fail-loud budget-source ratchets when the base root directory no longer exists in the head tree (a true package rename); narrowing onto a subtree while the old root exists stays blocked, now with regression tests.
+
 # v2.0.1 on July 4, 2026
 - Rebrand repo metadata to Origo: dist name, description, README, slice template prose, dev image tag, test fixtures dir and container prefix; remove the never-existing `quickstart_etl_tests` ghost path from pyproject, budgets, gates, and the lint contract; delete vestigial `dagster_cloud.yaml`.
 - Pin `default_status=RUNNING` on all 12 HuggingFace asset sensors and add a regression test asserting every sensor defaults to RUNNING.

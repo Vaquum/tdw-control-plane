@@ -314,11 +314,16 @@ def gate(
     # Structural: head must preserve package_root, must not add excludes,
     # must preserve every category key, must not raise any total.
     if budget_base is not None:
-        if budget_head.get('package_root') != budget_base.get('package_root'):
+        base_root = budget_base.get('package_root')
+        if budget_head.get('package_root') != base_root and (
+            not isinstance(base_root, str) or (REPO_ROOT / base_root).is_dir()
+        ):
             failures.append(
-                f'package_root changed from {budget_base.get("package_root")!r} '
+                f'package_root changed from {base_root!r} '
                 f'(base) to {budget_head.get("package_root")!r} (head). The scan '
-                f'surface cannot be narrowed in the same PR that gates.'
+                f'surface cannot be narrowed in the same PR that gates. A root '
+                f'change is only legal when the base root directory no longer '
+                f'exists in the head tree (a true package rename).'
             )
         base_excl = set(budget_base.get('excludes', []) or [])
         head_excl = set(budget_head.get('excludes', []) or [])

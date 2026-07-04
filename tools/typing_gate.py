@@ -632,11 +632,15 @@ def gate_budget_source(
     #   Adding an exclude hides files from the ratchet.
     base_root = base_budget.get('package_root')
     head_root = head_budget.get('package_root')
-    if base_root != head_root:
+    if base_root != head_root and (
+        not isinstance(base_root, str) or (REPO_ROOT / base_root).is_dir()
+    ):
         failures.append(
             f'package_root changed from {base_root!r} (base) to '
             f'{head_root!r} (head). The scan surface cannot be narrowed '
-            f'by the PR it gates.'
+            f'by the PR it gates. A root change is only legal when the '
+            f'base root directory no longer exists in the head tree '
+            f'(a true package rename).'
         )
 
     base_excludes_raw = base_budget.get('excludes', [])
