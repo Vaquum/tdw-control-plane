@@ -1,3 +1,6 @@
+# v3.0.3 on July 6, 2026
+- SECURITY: bind the deploy dagit webserver to 127.0.0.1 instead of all interfaces (it had no auth and was publicly reachable on :4000 since 2026-04-21); operator access is now via SSH tunnel. Add a tests/tools guard that fails any deploy-compose port not bound to loopback.
+
 # v3.0.2 on July 6, 2026
 - CI: sync the checked-in main ruleset snapshot with the `dismissal_restriction` field GitHub now returns on the live pull_request rule (disabled/default value; effective branch protection unchanged), unblocking the law-9 ruleset-drift gate.
 
