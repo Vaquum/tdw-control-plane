@@ -1,3 +1,6 @@
+# v3.0.2 on July 6, 2026
+- CI: sync the checked-in main ruleset snapshot with the `dismissal_restriction` field GitHub now returns on the live pull_request rule (disabled/default value; effective branch protection unchanged), unblocking the law-9 ruleset-drift gate.
+
 # v3.0.1 on July 4, 2026
 - Adopt the Origo identity in CI and deploy: repo renamed to Vaquum/Origo, deploy workflow variables `TDW_*` -> `ORIGO_*` (values unchanged; server names intentionally stay tdw), fresh `ORIGO_PRIVATE_KEY` deploy key, GHCR images `origo-dagster`/`origo-clickhouse` (legacy packages retained for rollback), slice-gate help text and ruleset fixtures updated.
 
