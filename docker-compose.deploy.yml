@@ -20,7 +20,7 @@ services:
   dagit:
     image: ${APP_IMAGE:?APP_IMAGE is required}
     ports:
-      - "4000:3000"
+      - "127.0.0.1:4000:3000"
     environment:
       - DAGSTER_HOME=/opt/app
       - PYTHONPATH=/opt/app
