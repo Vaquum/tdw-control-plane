@@ -14,8 +14,12 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 
 import requests
+from collections.abc import Sequence
+
 from dagster import (
     AssetKey,
+    DagsterInstance,
+    DagsterRun,
     DagsterRunStatus,
     DefaultScheduleStatus,
     DefaultSensorStatus,
@@ -88,7 +92,11 @@ from .assets.create_binance_trades_table_origo import (
 from .assets.create_binance_futures_trades_table_origo import (
     LEDGER_TABLE_NAME as FUTURES_DAILY_LEDGER_TABLE_NAME,
 )
-from .utils.daily_gap_repair import DailyGapRepairSpec, gap_repair_run_requests
+from .utils.daily_gap_repair import (
+    REPAIR_TERMINATION_GRACE_SECONDS,
+    DailyGapRepairSpec,
+    gap_repair_run_requests,
+)
 from .assets.create_binance_trades_table_origo import (
     create_binance_daily_spot_trades_table_origo,
 )
@@ -910,22 +918,44 @@ _IN_PROGRESS_RUN_STATUSES = [
 ]
 
 
-def _active_partition_days(context: ScheduleEvaluationContext, job_name: str) -> set[date]:
-    """Partitions of ``job_name`` with an in-progress run.
+_RECENTLY_TERMINAL_RUN_STATUSES = [
+    DagsterRunStatus.FAILURE,
+    DagsterRunStatus.CANCELED,
+]
 
-    A regular daily tick inside its op-retry backoff stays STARTED for up
-    to ~23h; racing it with a repair run would interleave the non-atomic
-    delete-then-insert. Days returned here are excluded from repair.
-    """
-    runs = context.instance.get_runs(
-        filters=RunsFilter(job_name=job_name, statuses=_IN_PROGRESS_RUN_STATUSES)
-    )
+
+def _partition_days(runs: Sequence[DagsterRun]) -> set[date]:
     days: set[date] = set()
     for run in runs:
         partition_key = run.tags.get('dagster/partition')
         if partition_key is not None:
             days.add(date.fromisoformat(partition_key))
     return days
+
+
+def _active_partition_days(instance: DagsterInstance, job_name: str) -> set[date]:
+    """Partitions of ``job_name`` that repair must not touch right now.
+
+    Two groups: runs currently in progress (a regular daily tick inside its
+    op-retry backoff stays STARTED for up to ~23h), and runs that reached a
+    terminal state within the last REPAIR_TERMINATION_GRACE_SECONDS — run
+    monitoring force-marks a timed-out run FAILED without confirming its
+    worker exited, so the partition may still be written by the old worker.
+    Racing either with a repair run would interleave the non-atomic
+    delete-then-insert.
+    """
+    in_progress = instance.get_runs(
+        filters=RunsFilter(job_name=job_name, statuses=_IN_PROGRESS_RUN_STATUSES)
+    )
+    recently_terminal = instance.get_runs(
+        filters=RunsFilter(
+            job_name=job_name,
+            statuses=_RECENTLY_TERMINAL_RUN_STATUSES,
+            updated_after=datetime.now(timezone.utc)
+            - timedelta(seconds=REPAIR_TERMINATION_GRACE_SECONDS),
+        )
+    )
+    return _partition_days(in_progress) | _partition_days(recently_terminal)
 
 
 def _daily_gap_repair_run_requests(
@@ -941,7 +971,7 @@ def _daily_gap_repair_run_requests(
             settings.database,
             spec,
             _scheduled_time(context).astimezone(timezone.utc).date(),
-            _active_partition_days(context, job_name),
+            _active_partition_days(context.instance, job_name),
         )
     finally:
         client.disconnect()

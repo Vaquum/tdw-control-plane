@@ -1,3 +1,6 @@
+# v3.2.0 on July 10, 2026
+- Enable Dagster run monitoring: runs stuck in STARTING fail after 300s, and any run is bounded at 26h (`max_runtime_seconds`; per-run override via the canonical `dagster/max_runtime` tag). DefaultRunLauncher has no worker health checks, so a dead STARTED worker turns red at the 26h bound, not sooner — an honest bound, not instant orphan detection. Gap repair additionally excludes partitions whose runs reached a terminal state within a 1h grace period, because a timed-out run is force-marked FAILED without confirmed worker exit (tracker #275 items 1 and 21). Run retries stay disabled until partition replacement is atomic.
+
 # v3.1.0 on July 9, 2026
 - Add hourly daily-gap-repair schedules for the spot and futures daily pipelines: ledger-absent days in a 14-day lookback (ending at today-2 to never race the regular daily ticks) whose Binance archive exists are re-requested as partition runs, keyed once per day per gap — the 2026-07-03 futures incident class now self-heals (tracker #275 item 17).
 
