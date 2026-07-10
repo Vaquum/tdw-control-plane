@@ -19,10 +19,15 @@ from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_cl
 daily_partitions = DailyPartitionsDefinition(start_date='2017-08-17')
 
 
+DEFAULT_BINANCE_SPOT_DAILY_TRADES_BASE_URL = (
+    'https://data.binance.vision/data/spot/daily/trades/BTCUSDT/'
+)
+
+
 def _get_daily_spot_trades_base_url() -> str:
     return os.environ.get(
         'BINANCE_SPOT_DAILY_TRADES_BASE_URL',
-        'https://data.binance.vision/data/spot/daily/trades/BTCUSDT/',
+        DEFAULT_BINANCE_SPOT_DAILY_TRADES_BASE_URL,
     )
 
 
