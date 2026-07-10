@@ -35,7 +35,11 @@ from dagster import (
     schedule,
 )
 
-from .assets.daily_trades_to_origo import insert_daily_binance_spot_trades_to_origo
+from .assets.daily_trades_to_origo import (
+    DEFAULT_BINANCE_SPOT_DAILY_TRADES_BASE_URL,
+    daily_partitions as spot_daily_partitions,
+    insert_daily_binance_spot_trades_to_origo,
+)
 from .assets.publish_binance_spot_klines_to_huggingface import (
     publish_binance_spot_klines_to_huggingface,
 )
@@ -72,7 +76,18 @@ from .assets.publish_binance_spot_120M_dollar_klines_to_huggingface import (
 from .assets.publish_binance_spot_240M_dollar_klines_to_huggingface import (
     publish_binance_spot_240M_dollar_klines_to_huggingface,
 )
-from .assets.create_origo_database import create_origo_database
+from .assets.create_origo_database import (
+    create_origo_database,
+    get_clickhouse_settings as get_origo_clickhouse_settings,
+    make_clickhouse_client as make_origo_clickhouse_client,
+)
+from .assets.create_binance_trades_table_origo import (
+    LEDGER_TABLE_NAME as SPOT_DAILY_LEDGER_TABLE_NAME,
+)
+from .assets.create_binance_futures_trades_table_origo import (
+    LEDGER_TABLE_NAME as FUTURES_DAILY_LEDGER_TABLE_NAME,
+)
+from .utils.daily_gap_repair import DailyGapRepairSpec, gap_repair_run_requests
 from .assets.create_binance_trades_table_origo import (
     create_binance_daily_spot_trades_table_origo,
 )
@@ -140,7 +155,11 @@ from .assets.refresh_binance_spot_depth200_1m_origo import (
 from .assets.create_aligned_1m_exchange_table_origo import (
     create_aligned_1m_exchange_table_origo,
 )
-from .assets.daily_futures_trades_to_origo import insert_daily_binance_futures_trades_to_origo
+from .assets.daily_futures_trades_to_origo import (
+    DEFAULT_BINANCE_FUTURES_DAILY_TRADES_BASE_URL,
+    daily_partitions as futures_daily_partitions,
+    insert_daily_binance_futures_trades_to_origo,
+)
 from .assets.refresh_aligned_1m_exchange_from_binance_spot_origo import (
     refresh_aligned_1m_exchange_from_binance_spot_origo,
 )
@@ -238,6 +257,33 @@ DEPTH20_LIVE_RECONCILIATION_SPEC = DepthLiveReconciliationSpec(
     base_url_env='BINANCE_SPOT_DEPTH20_BASE_URL',
     auth_token_env='BINANCE_SPOT_DEPTH20_AUTH_TOKEN',
 )
+
+def _spot_daily_trades_base_url() -> str:
+    return os.environ.get(
+        'BINANCE_SPOT_DAILY_TRADES_BASE_URL', DEFAULT_BINANCE_SPOT_DAILY_TRADES_BASE_URL
+    )
+
+
+def _futures_daily_trades_base_url() -> str:
+    return os.environ.get(
+        'BINANCE_FUTURES_DAILY_TRADES_BASE_URL', DEFAULT_BINANCE_FUTURES_DAILY_TRADES_BASE_URL
+    )
+
+
+SPOT_DAILY_GAP_REPAIR_SPEC = DailyGapRepairSpec(
+    market='spot',
+    ledger_table=SPOT_DAILY_LEDGER_TABLE_NAME,
+    earliest_partition=spot_daily_partitions.start.date(),
+    get_base_url=_spot_daily_trades_base_url,
+)
+
+FUTURES_DAILY_GAP_REPAIR_SPEC = DailyGapRepairSpec(
+    market='futures',
+    ledger_table=FUTURES_DAILY_LEDGER_TABLE_NAME,
+    earliest_partition=futures_daily_partitions.start.date(),
+    get_base_url=_futures_daily_trades_base_url,
+)
+
 
 DEPTH200_LIVE_RECONCILIATION_SPEC = DepthLiveReconciliationSpec(
     label='Depth200',
@@ -854,6 +900,47 @@ def binance_spot_latest_1m_schedule(context: ScheduleEvaluationContext) -> RunRe
     )
 
 
+def _daily_gap_repair_run_requests(
+    context: ScheduleEvaluationContext,
+    spec: DailyGapRepairSpec,
+) -> list[RunRequest] | SkipReason:
+    settings = get_origo_clickhouse_settings()
+    client = make_origo_clickhouse_client(settings)
+    try:
+        return gap_repair_run_requests(
+            client,
+            settings.database,
+            spec,
+            _scheduled_time(context).astimezone(timezone.utc).date(),
+        )
+    finally:
+        client.disconnect()
+
+
+@schedule(
+    job=refresh_binance_spot_data_source_job,
+    cron_schedule='30 * * * *',
+    execution_timezone='UTC',
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+def binance_spot_daily_gap_repair_schedule(
+    context: ScheduleEvaluationContext,
+) -> list[RunRequest] | SkipReason:
+    return _daily_gap_repair_run_requests(context, SPOT_DAILY_GAP_REPAIR_SPEC)
+
+
+@schedule(
+    job=refresh_binance_futures_data_source_job,
+    cron_schedule='30 * * * *',
+    execution_timezone='UTC',
+    default_status=DefaultScheduleStatus.RUNNING,
+)
+def binance_futures_daily_gap_repair_schedule(
+    context: ScheduleEvaluationContext,
+) -> list[RunRequest] | SkipReason:
+    return _daily_gap_repair_run_requests(context, FUTURES_DAILY_GAP_REPAIR_SPEC)
+
+
 def _publish_binance_spot_klines_to_hf_run_request(
     asset_event: _AssetEventLike,
     *,
@@ -1184,6 +1271,8 @@ defs = Definitions(
         binance_spot_depth200_projection_repair_schedule,
         binance_spot_depth200_arrow_repair_schedule,
         binance_spot_latest_1m_schedule,
+        binance_spot_daily_gap_repair_schedule,
+        binance_futures_daily_gap_repair_schedule,
         publish_binance_spot_klines_to_mount_schedule,
     ],
 

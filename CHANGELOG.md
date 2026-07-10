@@ -1,3 +1,6 @@
+# v3.1.0 on July 9, 2026
+- Add hourly daily-gap-repair schedules for the spot and futures daily pipelines: ledger-absent days in a 14-day lookback (ending at today-2 to never race the regular daily ticks) whose Binance archive exists are re-requested as partition runs, keyed once per day per gap — the 2026-07-03 futures incident class now self-heals (tracker #275 item 17).
+
 # v3.0.3 on July 6, 2026
 - SECURITY: bind the deploy dagit webserver to 127.0.0.1 instead of all interfaces (it had no auth and was publicly reachable on :4000 since 2026-04-21); operator access is now via SSH tunnel. Add a tests/tools guard that fails any deploy-compose port not bound to loopback.
 
