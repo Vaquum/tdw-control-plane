@@ -1,3 +1,6 @@
+# v3.2.0 on July 10, 2026
+- Enable Dagster run monitoring: runs stuck in STARTING fail after 300s, and any run exceeding 26h (above the daily assets' 23h op-retry envelope; per-run override via the dagster/max_runtime_seconds tag) is terminated — orphaned runs now turn red instead of sitting in-progress forever (tracker #275 item 1). Run retries stay disabled until partition replacement is atomic (item 21).
+
 # v3.1.0 on July 9, 2026
 - Add hourly daily-gap-repair schedules for the spot and futures daily pipelines: ledger-absent days in a 14-day lookback (ending at today-2 to never race the regular daily ticks) whose Binance archive exists are re-requested as partition runs, keyed once per day per gap — the 2026-07-03 futures incident class now self-heals (tracker #275 item 17).
 
