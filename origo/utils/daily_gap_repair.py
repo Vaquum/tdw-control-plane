@@ -13,6 +13,13 @@ DAILY_GAP_REPAIR_LOOKBACK_DAYS = 14
 MAX_GAP_REPAIR_RUNS_PER_TICK = 3
 ARCHIVE_PROBE_TIMEOUT_SECONDS = 30
 
+# Run monitoring force-marks a timed-out run FAILED without confirming the
+# worker subprocess exited (DefaultRunLauncher's CancelExecution only sets a
+# termination event), so a just-terminated partition may still have a worker
+# finishing its delete-then-insert. Its partition stays excluded from repair
+# for this grace period after the run reaches a terminal state.
+REPAIR_TERMINATION_GRACE_SECONDS = 3600
+
 
 @dataclass(frozen=True)
 class DailyGapRepairSpec:
