@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Set as AbstractSet
 from dataclasses import dataclass
 from datetime import date, timedelta
 
@@ -32,7 +32,10 @@ def archive_available(base_url: str, day: date) -> bool:
         response = requests.get(checksum_url, timeout=ARCHIVE_PROBE_TIMEOUT_SECONDS)
     except requests.RequestException:
         return False
-    return response.status_code == 200
+    try:
+        return response.status_code == 200
+    finally:
+        response.close()
 
 
 def repair_window(today: date, earliest_partition: date) -> tuple[date, date] | None:
@@ -78,7 +81,16 @@ def repairable_gap_days(
     database: str,
     spec: DailyGapRepairSpec,
     today: date,
+    active_partition_days: AbstractSet[date],
 ) -> list[date]:
+    """Ledger-absent days with an available archive and no in-flight run.
+
+    ``active_partition_days`` are partitions with an in-progress run of the
+    same job — including a regular daily tick still inside its op-retry
+    backoff (RetryPolicy holds the run in STARTED for up to ~23h) — which
+    must never be raced by a concurrent repair run of the non-atomic
+    delete-then-insert assets.
+    """
     window = repair_window(today, spec.earliest_partition)
     if window is None:
         return []
@@ -88,7 +100,7 @@ def repairable_gap_days(
     gaps: list[date] = []
     day = start
     while day <= end and len(gaps) < MAX_GAP_REPAIR_RUNS_PER_TICK:
-        if day not in loaded and archive_available(base_url, day):
+        if day not in loaded and day not in active_partition_days and archive_available(base_url, day):
             gaps.append(day)
         day += timedelta(days=1)
     return gaps
@@ -99,6 +111,7 @@ def gap_repair_run_requests(
     database: str,
     spec: DailyGapRepairSpec,
     today: date,
+    active_partition_days: AbstractSet[date],
 ) -> list[RunRequest] | SkipReason:
     """One RunRequest per repairable gap day, keyed once per day per gap.
 
@@ -106,7 +119,7 @@ def gap_repair_run_requests(
     at most once per day until its ledger row appears, without ever
     re-running a partition the same day it was already requested.
     """
-    gaps = repairable_gap_days(client, database, spec, today)
+    gaps = repairable_gap_days(client, database, spec, today, active_partition_days)
     if not gaps:
         return SkipReason(f'{spec.market}: no repairable daily gaps in lookback.')
     return [

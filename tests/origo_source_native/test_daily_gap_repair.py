@@ -22,13 +22,30 @@ def test_missing_day_with_archive_is_requested_once_per_day(
     client, database, spec = _spot_client_and_spec(origo_definitions_module)
 
     try:
-        result = gap_repair_run_requests(client, database, spec, date(2024, 1, 4))
+        result = gap_repair_run_requests(client, database, spec, date(2024, 1, 4), frozenset())
     finally:
         client.disconnect()
 
     assert isinstance(result, list)
     assert [request.partition_key for request in result] == ['2024-01-02']
     assert result[0].run_key == 'daily_gap_repair:spot:2024-01-02:2024-01-04'
+
+
+def test_day_with_in_progress_run_is_not_repaired(
+    materialize_origo_assets: Any,
+    origo_definitions_module: Any,
+) -> None:
+    materialize_origo_assets(partition_key='2024-01-01')
+    client, database, spec = _spot_client_and_spec(origo_definitions_module)
+
+    try:
+        result = gap_repair_run_requests(
+            client, database, spec, date(2024, 1, 4), frozenset({date(2024, 1, 2)})
+        )
+    finally:
+        client.disconnect()
+
+    assert isinstance(result, SkipReason)
 
 
 def test_loaded_window_skips(
@@ -39,7 +56,7 @@ def test_loaded_window_skips(
     client, database, spec = _spot_client_and_spec(origo_definitions_module)
 
     try:
-        result = gap_repair_run_requests(client, database, spec, date(2024, 1, 3))
+        result = gap_repair_run_requests(client, database, spec, date(2024, 1, 3), frozenset())
     finally:
         client.disconnect()
 

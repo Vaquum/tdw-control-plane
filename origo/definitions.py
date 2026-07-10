@@ -10,7 +10,7 @@
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Protocol
 
 import requests
@@ -24,6 +24,7 @@ from dagster import (
     RunRequest,
     RunStatusSensorContext,
     RunStatusSensorDefinition,
+    RunsFilter,
     ScheduleDefinition,
     ScheduleEvaluationContext,
     SkipReason,
@@ -900,9 +901,37 @@ def binance_spot_latest_1m_schedule(context: ScheduleEvaluationContext) -> RunRe
     )
 
 
+_IN_PROGRESS_RUN_STATUSES = [
+    DagsterRunStatus.QUEUED,
+    DagsterRunStatus.NOT_STARTED,
+    DagsterRunStatus.STARTING,
+    DagsterRunStatus.STARTED,
+    DagsterRunStatus.CANCELING,
+]
+
+
+def _active_partition_days(context: ScheduleEvaluationContext, job_name: str) -> set[date]:
+    """Partitions of ``job_name`` with an in-progress run.
+
+    A regular daily tick inside its op-retry backoff stays STARTED for up
+    to ~23h; racing it with a repair run would interleave the non-atomic
+    delete-then-insert. Days returned here are excluded from repair.
+    """
+    runs = context.instance.get_runs(
+        filters=RunsFilter(job_name=job_name, statuses=_IN_PROGRESS_RUN_STATUSES)
+    )
+    days: set[date] = set()
+    for run in runs:
+        partition_key = run.tags.get('dagster/partition')
+        if partition_key is not None:
+            days.add(date.fromisoformat(partition_key))
+    return days
+
+
 def _daily_gap_repair_run_requests(
     context: ScheduleEvaluationContext,
     spec: DailyGapRepairSpec,
+    job_name: str,
 ) -> list[RunRequest] | SkipReason:
     settings = get_origo_clickhouse_settings()
     client = make_origo_clickhouse_client(settings)
@@ -912,6 +941,7 @@ def _daily_gap_repair_run_requests(
             settings.database,
             spec,
             _scheduled_time(context).astimezone(timezone.utc).date(),
+            _active_partition_days(context, job_name),
         )
     finally:
         client.disconnect()
@@ -926,7 +956,9 @@ def _daily_gap_repair_run_requests(
 def binance_spot_daily_gap_repair_schedule(
     context: ScheduleEvaluationContext,
 ) -> list[RunRequest] | SkipReason:
-    return _daily_gap_repair_run_requests(context, SPOT_DAILY_GAP_REPAIR_SPEC)
+    return _daily_gap_repair_run_requests(
+        context, SPOT_DAILY_GAP_REPAIR_SPEC, 'refresh_binance_spot_data_source_job'
+    )
 
 
 @schedule(
@@ -938,7 +970,9 @@ def binance_spot_daily_gap_repair_schedule(
 def binance_futures_daily_gap_repair_schedule(
     context: ScheduleEvaluationContext,
 ) -> list[RunRequest] | SkipReason:
-    return _daily_gap_repair_run_requests(context, FUTURES_DAILY_GAP_REPAIR_SPEC)
+    return _daily_gap_repair_run_requests(
+        context, FUTURES_DAILY_GAP_REPAIR_SPEC, 'refresh_binance_futures_data_source_job'
+    )
 
 
 def _publish_binance_spot_klines_to_hf_run_request(
