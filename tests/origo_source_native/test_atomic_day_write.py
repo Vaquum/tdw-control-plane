@@ -42,14 +42,18 @@ def _rows(n: int) -> list[tuple[object, ...]]:
     return [(i, float(i), '2024-01-01 00:00:00') for i in range(n)]
 
 
-def _touches_live_table(statements: Sequence[str]) -> bool:
-    return any(
-        f'{DATABASE}.{MAIN_TABLE}' in s and STAGING not in s and 'SELECT count()' not in s
-        for s in statements
-    )
+def _mutates_live_table(statements: Sequence[str]) -> bool:
+    # The staging table name is `<MAIN_TABLE>__staging_...`, so match only the
+    # exact live-table mutation shapes (main followed by newline / space / as a
+    # MOVE destination), never the staging references.
+    joined = '\n'.join(statements)
+    delete_on_live = f'ALTER TABLE {DATABASE}.{MAIN_TABLE}\n' in joined
+    move_into_live = f'TO TABLE {DATABASE}.{MAIN_TABLE}' in joined
+    insert_into_live = f'INSERT INTO {DATABASE}.{MAIN_TABLE} ' in joined
+    return delete_on_live or move_into_live or insert_into_live
 
 
-def test_happy_path_swaps_and_returns_live_count() -> None:
+def test_happy_path_promotes_via_atomic_move_partition() -> None:
     client = _FakeClient(staging_count=3, live_count=3)
 
     result = replace_day_via_staging(client, DATABASE, MAIN_TABLE, DATE, COLUMNS, _rows(3))
@@ -57,9 +61,13 @@ def test_happy_path_swaps_and_returns_live_count() -> None:
     assert result == 3
     joined = '\n'.join(client.statements)
     assert f'CREATE TABLE {DATABASE}.{STAGING} AS {DATABASE}.{MAIN_TABLE}' in joined
-    assert f'ALTER TABLE {DATABASE}.{MAIN_TABLE}' in joined  # delete happened
-    assert f'INSERT INTO {DATABASE}.{MAIN_TABLE}' in joined
-    assert f'SELECT trade_id, price, datetime FROM {DATABASE}.{STAGING}' in joined
+    assert f'ALTER TABLE {DATABASE}.{MAIN_TABLE}\n            DELETE' in joined
+    # Promotion is a metadata part-move, NOT a splittable INSERT..SELECT that
+    # could commit a partial day on cancellation.
+    assert (
+        f"MOVE PARTITION ID '202401' TO TABLE {DATABASE}.{MAIN_TABLE}" in joined
+    )
+    assert f'INSERT INTO {DATABASE}.{MAIN_TABLE} ' not in joined
 
 
 def test_staging_mismatch_leaves_live_table_untouched() -> None:
@@ -69,7 +77,7 @@ def test_staging_mismatch_leaves_live_table_untouched() -> None:
     with pytest.raises(ValueError, match='Staging row count mismatch'):
         replace_day_via_staging(client, DATABASE, MAIN_TABLE, DATE, COLUMNS, _rows(3))
 
-    assert not _touches_live_table(client.statements)
+    assert not _mutates_live_table(client.statements)
 
 
 def test_staging_table_dropped_on_success_and_failure() -> None:
@@ -108,3 +116,50 @@ def test_no_staging_table_remains_after_materialize(
     )
 
     assert remaining[0][0] == 0
+
+
+def test_replacing_a_day_preserves_other_days_in_the_month(
+    materialize_origo_assets: Any,
+    query_origo: Any,
+) -> None:
+    """MOVE PARTITION must append the day into the live month, not replace it.
+
+    Both days share the 202401 partition; re-ingesting one must leave the
+    other's rows byte-for-byte intact and leave no duplicate for the
+    re-ingested day.
+    """
+    materialize_origo_assets(partition_key='2024-01-01')
+    materialize_origo_assets(partition_key='2024-01-02')
+
+    def _day_count(day: str) -> int:
+        return query_origo(
+            f"""
+            SELECT count()
+            FROM {DATABASE}.{MAIN_TABLE}
+            WHERE toDate(datetime) = toDate('{day}')
+            """
+        )[0][0]
+
+    day1_before = _day_count('2024-01-01')
+    day2_before = _day_count('2024-01-02')
+    assert day1_before > 0 and day2_before > 0
+
+    # Re-ingest only day 2; day 1 (same month partition) must be untouched.
+    materialize_origo_assets(partition_key='2024-01-02')
+
+    assert _day_count('2024-01-01') == day1_before
+    assert _day_count('2024-01-02') == day2_before
+
+    duplicate_ids = query_origo(
+        f"""
+        SELECT count()
+        FROM (
+            SELECT trade_id
+            FROM {DATABASE}.{MAIN_TABLE}
+            WHERE toDate(datetime) = toDate('2024-01-02')
+            GROUP BY trade_id
+            HAVING count() > 1
+        )
+        """
+    )
+    assert duplicate_ids[0][0] == 0
