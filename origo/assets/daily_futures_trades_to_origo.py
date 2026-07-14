@@ -15,6 +15,17 @@ from .create_binance_futures_trades_table_origo import (
     create_binance_daily_futures_trades_table_origo,
 )
 from .create_origo_database import _get_clickhouse_settings, _make_clickhouse_client
+from origo.utils.atomic_day_write import replace_day_via_staging
+
+FUTURES_TRADE_COLUMNS = (
+    'futures_trade_id',
+    'price',
+    'quantity',
+    'quote_quantity',
+    'timestamp',
+    'is_buyer_maker',
+    'datetime',
+)
 
 DEFAULT_BINANCE_FUTURES_DAILY_TRADES_BASE_URL = (
     'https://data.binance.vision/data/futures/um/daily/trades/BTCUSDT/'
@@ -95,21 +106,6 @@ def _parse_trade_rows(csv_content: bytes) -> list[tuple[object, ...]]:
     return rows
 
 
-def _delete_partition_rows(
-    client: ClickhouseClient,
-    database: str,
-    table_name: str,
-    date_str: str,
-) -> None:
-    client.execute(
-        f"""
-        ALTER TABLE {database}.{table_name}
-        DELETE WHERE toDate(datetime) = toDate('{date_str}')
-        """,
-        settings={'mutations_sync': 2},
-    )
-
-
 def _delete_ledger_row(
     client: ClickhouseClient,
     database: str,
@@ -124,28 +120,6 @@ def _delete_ledger_row(
         """,
         settings={'mutations_sync': 2},
     )
-
-
-def _count_rows_for_day(client: ClickhouseClient, database: str, date_str: str) -> int:
-    result = client.execute(
-        f"""
-        SELECT count(*)
-        FROM {database}.{RAW_TABLE_NAME}
-        WHERE toDate(datetime) = toDate('{date_str}')
-        """
-    )
-    if not isinstance(result, list) or not result:
-        raise TypeError(f'Expected row result from ClickHouse, got {type(result).__name__}')
-
-    row = result[0]
-    if not isinstance(row, tuple) or not row:
-        raise TypeError(f'Expected tuple row from ClickHouse, got {type(row).__name__}')
-
-    value = row[0]
-    if not isinstance(value, int):
-        raise TypeError(f'Expected int scalar from ClickHouse, got {type(value).__name__}')
-
-    return value
 
 
 def _partition_date_from_context(context: AssetExecutionContext) -> str:
@@ -234,36 +208,14 @@ def _process_day(
     client = _make_clickhouse_client(settings)
 
     try:
-        existing_count = _count_rows_for_day(client, settings.database, date_str)
-        if existing_count > 0:
-            context.log.info(
-                f'Found {existing_count} existing rows for {date_str}. Replacing that day.'
-            )
-            _delete_partition_rows(client, settings.database, RAW_TABLE_NAME, date_str)
-
-        client.execute(
-            f"""
-            INSERT INTO {settings.database}.{RAW_TABLE_NAME}
-            (
-                futures_trade_id,
-                price,
-                quantity,
-                quote_quantity,
-                timestamp,
-                is_buyer_maker,
-                datetime
-            ) SETTINGS async_insert=1, wait_for_async_insert=1
-            VALUES
-            """,
+        inserted_count = replace_day_via_staging(
+            client,
+            settings.database,
+            RAW_TABLE_NAME,
+            date_str,
+            FUTURES_TRADE_COLUMNS,
             rows,
-            settings={'max_execution_time': 900},
         )
-
-        inserted_count = _count_rows_for_day(client, settings.database, date_str)
-        if inserted_count != len(rows):
-            raise ValueError(
-                f'Row count mismatch! Expected: {len(rows)}, Actual: {inserted_count}'
-            )
 
         partition_key = context.partition_key or date_str
         _write_ingestion_ledger(

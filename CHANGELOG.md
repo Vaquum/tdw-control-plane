@@ -1,3 +1,6 @@
+# v3.3.0 on July 10, 2026
+- Make the daily spot/futures partition write atomic-in-practice: the full-day row insert (millions of rows over minutes — the window a killed run left a partial day in) now builds and count-verifies a per-day staging table before touching the live table, then swaps it in with a minimal server-side DELETE + INSERT..SELECT (seconds). The live table is untouched until the day is proven complete, and the staging table is always dropped (tracker #275 item 4). Unblocks run-level retries (item 21).
+
 # v3.2.0 on July 10, 2026
 - Enable Dagster run monitoring: runs stuck in STARTING fail after 300s, and any run is bounded at 26h (`max_runtime_seconds`; per-run override via the canonical `dagster/max_runtime` tag). DefaultRunLauncher has no worker health checks, so a dead STARTED worker turns red at the 26h bound, not sooner — an honest bound, not instant orphan detection. Gap repair additionally excludes partitions whose runs reached a terminal state within a 1h grace period, because a timed-out run is force-marked FAILED without confirmed worker exit (tracker #275 items 1 and 21). Run retries stay disabled until partition replacement is atomic.
 
