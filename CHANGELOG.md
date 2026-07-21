@@ -1,3 +1,6 @@
+# v3.3.1 on July 21, 2026
+- Add the MIT license (verbatim from Vaquum/Limen) as a root LICENSE file plus `[project]` license metadata in pyproject.toml, and rewrite README.md to the shared Vaquum module README structure: honest capability inventory backed by code on `main`, a docker-compose quickstart (table creation, one-day spot backfill, query-module read-back), and the standard boilerplate tail.
+
 # v3.3.0 on July 10, 2026
 - Make the daily spot/futures partition write atomic: the full-day row insert (millions of rows over minutes — the window a killed run left a partial day in) now builds and count-verifies a per-day staging table before the live table is touched, then promotes it with a synchronous day DELETE followed by an atomic `MOVE PARTITION` (metadata part-move, not a splittable INSERT..SELECT that can commit a partial day on cancellation). MOVE appends the day into the live month partition, preserving the month's other days. The only residual window (between DELETE and MOVE) leaves the day MISSING, never partial or duplicated, which the daily gap-repair schedule then heals (tracker #275 item 4). Unblocks run-level retries (item 21).
 

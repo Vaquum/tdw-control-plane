@@ -4,9 +4,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "origo"
-version = "3.3.0"
-description = "Origo control plane"
+version = "3.3.1"
+description = "Event-sourced market data platform for deterministic, replayable financial data access"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.11"
 dependencies = [
   "dagster",
