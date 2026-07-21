@@ -29,7 +29,7 @@
 
 *Event-sourced Bitcoin market data platform that turns raw Binance archives into checksum-verified trade tables, rebuildable bar projections, and replayable research datasets.*
 
-Origo ingests Binance BTCUSDT market data into ClickHouse under Dagster orchestration, records every ingested source file in a checksum ledger, and rebuilds every derived table deterministically from that raw record. The Dagster deployment in this repository is Origo's control plane — the term names that orchestration component, not the project. The project evolves from tdw-control-plane, this repository's original identity.
+Origo ingests Binance BTCUSDT market data into ClickHouse under Dagster orchestration, records every ingested source file in a checksum ledger, and rebuilds every daily-partitioned projection deterministically from that raw record; the rolling `_latest` tables and live depth snapshots capture the span after the last daily load and sit outside that rebuild guarantee. The Dagster deployment in this repository is Origo's control plane — the term names that orchestration component, not the project. The project evolves from tdw-control-plane, this repository's original identity.
 
 ## What Origo Is Not
 
@@ -88,7 +88,8 @@ docker compose exec -e CLICKHOUSE_PASSWORD dagster \
 
 ```bash
 docker compose exec -e CLICKHOUSE_PASSWORD dagster \
-  dagster job backfill -j refresh_binance_spot_data_source_job \
+  dagster job backfill -m origo.definitions \
+  -j refresh_binance_spot_data_source_job \
   --partitions 2024-01-02 --noprompt
 ```
 

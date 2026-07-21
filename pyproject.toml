@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "origo"
 version = "3.3.1"
-description = "Origo control plane"
+description = "Event-sourced market data platform for deterministic, replayable financial data access"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
