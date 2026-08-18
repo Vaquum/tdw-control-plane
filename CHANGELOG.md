@@ -1,3 +1,6 @@
+# v3.4.0 on August 18, 2026
+- Add the `publish_btc_briefing_feed` asset: builds and validates the daily BTC briefing feed (`btc_briefing/1`) for the last complete UTC day from the origo ClickHouse tables — 15m/1d OHLCV bars from the 1m klines projection, measured volume-at-price in exact integer satoshis split by taker side, and per-minute series, exact daily percentiles and 8h session aggregates of the depth20 1m book. An incomplete bar day raises instead of producing a short feed. The asset computes and validates only; delivery to the consuming repository is deliberately a separate slice.
+
 # v3.3.1 on July 21, 2026
 - Add the MIT license (verbatim from Vaquum/Limen) as a root LICENSE file plus `[project]` license metadata in pyproject.toml, and rewrite README.md to the shared Vaquum module README structure: honest capability inventory backed by code on `main`, a docker-compose quickstart (table creation, one-day spot backfill, query-module read-back), and the standard boilerplate tail.
 
