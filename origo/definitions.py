@@ -81,6 +81,7 @@ from .assets.publish_binance_spot_120M_dollar_klines_to_huggingface import (
 from .assets.publish_binance_spot_240M_dollar_klines_to_huggingface import (
     publish_binance_spot_240M_dollar_klines_to_huggingface,
 )
+from .assets.publish_btc_briefing_feed import publish_btc_briefing_feed
 from .assets.create_origo_database import (
     create_origo_database,
     get_clickhouse_settings as get_origo_clickhouse_settings,
@@ -524,6 +525,10 @@ publish_binance_spot_120M_dollar_klines_to_huggingface_job = define_asset_job(
 publish_binance_spot_240M_dollar_klines_to_huggingface_job = define_asset_job(
     name="publish_binance_spot_240M_dollar_klines_to_huggingface_job",
     selection=["publish_binance_spot_240M_dollar_klines_to_huggingface"])
+
+publish_btc_briefing_feed_job = define_asset_job(
+    name="publish_btc_briefing_feed_job",
+    selection=["publish_btc_briefing_feed"])
 
 # Local Parquet Mirror Jobs
 
@@ -1321,6 +1326,7 @@ defs = Definitions(
             publish_binance_spot_60M_dollar_klines_to_huggingface,
             publish_binance_spot_120M_dollar_klines_to_huggingface,
             publish_binance_spot_240M_dollar_klines_to_huggingface,
+            publish_btc_briefing_feed,
             *MOUNT_EXPORT_ASSETS,
             build_bar_store_arrow,
             build_depth_snapshot_store_arrow],
@@ -1397,6 +1403,7 @@ defs = Definitions(
           publish_binance_spot_60M_dollar_klines_to_huggingface_job,
           publish_binance_spot_120M_dollar_klines_to_huggingface_job,
           publish_binance_spot_240M_dollar_klines_to_huggingface_job,
+          publish_btc_briefing_feed_job,
           publish_binance_spot_klines_to_mount_job,
           backfill_binance_spot_klines_to_mount_job,
           build_bar_store_arrow_job,
