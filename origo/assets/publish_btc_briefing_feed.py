@@ -231,47 +231,101 @@ Latest snapshot:
 """
 
 
+class _HfApiProtocol(Protocol):
+    def repo_exists(self, *, repo_id: str, repo_type: str) -> bool:
+        raise NotImplementedError
+
+    def file_exists(self, *, repo_id: str, filename: str, repo_type: str) -> bool:
+        raise NotImplementedError
+
+    def hf_hub_download(self, *, repo_id: str, filename: str, repo_type: str) -> str:
+        raise NotImplementedError
+
+    def create_repo(self, *, repo_id: str, repo_type: str, exist_ok: bool) -> None:
+        raise NotImplementedError
+
+    def upload_folder(
+        self,
+        *,
+        folder_path: str,
+        repo_id: str,
+        repo_type: str,
+        commit_message: str,
+    ) -> None:
+        raise NotImplementedError
+
+
+def _make_hf_api(token: str) -> _HfApiProtocol:
+    return cast(_HfApiProtocol, HfApi(token=token))
+
+
+def _published_latest_day(api: _HfApiProtocol, repo_id: str) -> date | None:
+    """The day named by the dataset's current ``latest.json``, or None before the first publish."""
+    if not api.repo_exists(repo_id=repo_id, repo_type='dataset'):
+        return None
+    if not api.file_exists(repo_id=repo_id, filename='latest.json', repo_type='dataset'):
+        return None
+    latest_path = api.hf_hub_download(
+        repo_id=repo_id, filename='latest.json', repo_type='dataset'
+    )
+    latest_raw: object = json.loads(Path(latest_path).read_text(encoding='utf-8'))
+    if not isinstance(latest_raw, dict):
+        raise RuntimeError(f'{repo_id} latest.json is not a JSON object.')
+    latest_day = cast(dict[str, object], latest_raw).get('day')
+    if not isinstance(latest_day, str):
+        raise RuntimeError(f'{repo_id} latest.json does not carry a day string.')
+    return date.fromisoformat(latest_day)
+
+
 def publish_briefing_feed_to_huggingface(
     feed: Mapping[str, object], *, repo_id: str, token: str
 ) -> dict[str, object]:
     """Upload one day's feed dict to the HuggingFace dataset ``repo_id``.
 
-    Writes ``btc_briefing_<yyyymmdd>.json``, a ``latest.json`` pointer and the
-    dataset card, then uploads the folder in one commit. Past day files are
-    left in place, so the dataset accumulates one file per published day.
+    Writes ``btc_briefing_<yyyymmdd>.json`` and uploads it in one commit; past
+    day files are left in place, so the dataset accumulates one file per
+    published day. The ``latest.json`` pointer and the dataset card are only
+    rewritten when this day advances past the day the dataset currently points
+    at, so backfilling an older partition never repoints ``latest`` at a stale
+    day.
     """
     raw_day = feed['day']
     if not isinstance(raw_day, str):
         raise RuntimeError(f'Feed day must be an ISO date string, got {raw_day!r}.')
-    day = date.fromisoformat(raw_day).isoformat()
+    published_day = date.fromisoformat(raw_day)
+    day = published_day.isoformat()
 
     file_name = f'btc_briefing_{day.replace("-", "")}.json'
     feed_bytes = (json.dumps(feed, sort_keys=True) + '\n').encode('utf-8')
     sha256 = hashlib.sha256(feed_bytes).hexdigest()
 
+    api = _make_hf_api(token)
+    latest_day = _published_latest_day(api, repo_id)
+    advance_latest = latest_day is None or published_day > latest_day
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
         (tmp_path / file_name).write_bytes(feed_bytes)
-        (tmp_path / 'latest.json').write_text(
-            json.dumps(
-                {
-                    'feed_version': FEED_VERSION,
-                    'day': day,
-                    'file_name': file_name,
-                    'sha256': sha256,
-                    'generated_at_utc': datetime.now(UTC).isoformat(),
-                },
-                indent=2,
+        if advance_latest:
+            (tmp_path / 'latest.json').write_text(
+                json.dumps(
+                    {
+                        'feed_version': FEED_VERSION,
+                        'day': day,
+                        'file_name': file_name,
+                        'sha256': sha256,
+                        'generated_at_utc': datetime.now(UTC).isoformat(),
+                    },
+                    indent=2,
+                )
+                + '\n',
+                encoding='utf-8',
             )
-            + '\n',
-            encoding='utf-8',
-        )
-        (tmp_path / 'README.md').write_text(
-            _build_dataset_card(day=day, file_name=file_name, sha256=sha256),
-            encoding='utf-8',
-        )
+            (tmp_path / 'README.md').write_text(
+                _build_dataset_card(day=day, file_name=file_name, sha256=sha256),
+                encoding='utf-8',
+            )
 
-        api = HfApi(token=token)
         api.create_repo(repo_id=repo_id, repo_type='dataset', exist_ok=True)
         api.upload_folder(
             folder_path=str(tmp_path),
@@ -285,6 +339,7 @@ def publish_briefing_feed_to_huggingface(
         'file_name': file_name,
         'day': day,
         'sha256': sha256,
+        'latest_updated': advance_latest,
     }
 
 

@@ -385,12 +385,27 @@ def test_job_is_registered_in_definitions() -> None:
     ]
 
 
-def _install_recording_hf_api(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+def _install_recording_hf_api(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    existing_latest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     uploaded: dict[str, Any] = {}
 
     class RecordingHfApi:
         def __init__(self, token: str) -> None:
             uploaded['token'] = token
+
+        def repo_exists(self, *, repo_id: str, repo_type: str) -> bool:
+            return existing_latest is not None
+
+        def file_exists(self, *, repo_id: str, filename: str, repo_type: str) -> bool:
+            return existing_latest is not None
+
+        def hf_hub_download(self, *, repo_id: str, filename: str, repo_type: str) -> str:
+            latest_path = tmp_path / 'existing_latest.json'
+            latest_path.write_text(json.dumps(existing_latest))
+            return str(latest_path)
 
         def create_repo(self, *, repo_id: str, repo_type: str, exist_ok: bool) -> None:
             uploaded['repo_id'] = repo_id
@@ -409,10 +424,13 @@ def _install_recording_hf_api(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]
             uploaded['upload_repo_id'] = repo_id
             uploaded['commit_message'] = commit_message
             uploaded['files'] = sorted(path.name for path in folder.iterdir())
-            uploaded['latest'] = json.loads((folder / 'latest.json').read_text())
-            uploaded['readme'] = (folder / 'README.md').read_text()
-            feed_file = uploaded['latest']['file_name']
-            uploaded['feed_bytes'] = (folder / feed_file).read_bytes()
+            if (folder / 'latest.json').exists():
+                uploaded['latest'] = json.loads((folder / 'latest.json').read_text())
+                uploaded['readme'] = (folder / 'README.md').read_text()
+                feed_file = uploaded['latest']['file_name']
+                uploaded['feed_bytes'] = (folder / feed_file).read_bytes()
+            else:
+                uploaded['feed_bytes'] = (folder / uploaded['files'][0]).read_bytes()
 
     monkeypatch.setattr(publish_btc_briefing_feed_module, 'HfApi', RecordingHfApi)
     return uploaded
@@ -435,12 +453,13 @@ def test_sensor_is_registered_in_definitions() -> None:
 
 def test_publish_uploads_feed_snapshot_with_latest_pointer(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     origo_assets: dict[str, Any],
     query_origo: Callable[[str], list[tuple[Any, ...]]],
 ) -> None:
     _populate_complete_day(origo_assets, query_origo)
     feed = _build_feed_for_day(DAY)
-    uploaded = _install_recording_hf_api(monkeypatch)
+    uploaded = _install_recording_hf_api(monkeypatch, tmp_path)
 
     result = publish_briefing_feed_to_huggingface(
         feed, repo_id='test/btc-briefing', token='test-token'
@@ -458,12 +477,13 @@ def test_publish_uploads_feed_snapshot_with_latest_pointer(
 
 def test_latest_pointer_declares_version_and_day(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     origo_assets: dict[str, Any],
     query_origo: Callable[[str], list[tuple[Any, ...]]],
 ) -> None:
     _populate_complete_day(origo_assets, query_origo)
     feed = _build_feed_for_day(DAY)
-    uploaded = _install_recording_hf_api(monkeypatch)
+    uploaded = _install_recording_hf_api(monkeypatch, tmp_path)
 
     publish_briefing_feed_to_huggingface(
         feed, repo_id='test/btc-briefing', token='test-token'
@@ -478,13 +498,58 @@ def test_latest_pointer_declares_version_and_day(
     )
 
 
-def test_backfill_partition_publishes_that_day(
+def test_backfill_of_older_day_does_not_move_latest_pointer(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
     origo_assets: dict[str, Any],
     query_origo: Callable[[str], list[tuple[Any, ...]]],
 ) -> None:
     _populate_complete_day(origo_assets, query_origo)
-    uploaded = _install_recording_hf_api(monkeypatch)
+    feed = _build_feed_for_day(DAY)
+    uploaded = _install_recording_hf_api(
+        monkeypatch,
+        tmp_path,
+        existing_latest={'feed_version': FEED_VERSION, 'day': '2024-01-02'},
+    )
+
+    result = publish_briefing_feed_to_huggingface(
+        feed, repo_id='test/btc-briefing', token='test-token'
+    )
+
+    assert uploaded['files'] == ['btc_briefing_20240101.json']
+    assert result['latest_updated'] is False
+
+
+def test_newer_day_advances_latest_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+    feed = _build_feed_for_day(DAY)
+    uploaded = _install_recording_hf_api(
+        monkeypatch,
+        tmp_path,
+        existing_latest={'feed_version': FEED_VERSION, 'day': '2023-12-31'},
+    )
+
+    result = publish_briefing_feed_to_huggingface(
+        feed, repo_id='test/btc-briefing', token='test-token'
+    )
+
+    assert uploaded['latest']['day'] == DAY.isoformat()
+    assert result['latest_updated'] is True
+
+
+def test_backfill_partition_publishes_that_day(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+    uploaded = _install_recording_hf_api(monkeypatch, tmp_path)
     monkeypatch.setenv('HF_TOKEN', 'test-token')
 
     result = materialize(
