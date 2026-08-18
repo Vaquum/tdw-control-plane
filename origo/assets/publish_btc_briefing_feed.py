@@ -240,9 +240,10 @@ def publish_briefing_feed_to_huggingface(
     dataset card, then uploads the folder in one commit. Past day files are
     left in place, so the dataset accumulates one file per published day.
     """
-    day = feed['day']
-    if not isinstance(day, str):
-        raise RuntimeError(f'Feed day must be an ISO date string, got {day!r}.')
+    raw_day = feed['day']
+    if not isinstance(raw_day, str):
+        raise RuntimeError(f'Feed day must be an ISO date string, got {raw_day!r}.')
+    day = date.fromisoformat(raw_day).isoformat()
 
     file_name = f'btc_briefing_{day.replace("-", "")}.json'
     feed_bytes = (json.dumps(feed, sort_keys=True) + '\n').encode('utf-8')
