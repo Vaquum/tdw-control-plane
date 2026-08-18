@@ -1,8 +1,10 @@
 -- Per-minute book state for the UTC day {day:Date} from the depth20 1m
--- projection. FINAL collapses ReplacingMergeTree duplicates to the latest
--- snapshot per minute.
+-- projection. minute_start is declared as UTC epoch seconds (toUnixTimestamp)
+-- so the feed's time representation is fixed by this query, not inherited
+-- from the server's Arrow serialization of DateTime. FINAL collapses
+-- ReplacingMergeTree duplicates to the latest snapshot per minute.
 SELECT
-    datetime,
+    toUnixTimestamp(datetime) AS minute_start,
     book_mid_price,
     book_spread_bps,
     book_bid_depth_20_notional,
@@ -10,5 +12,5 @@ SELECT
     book_imbalance_20
 FROM origo.binance_spot_depth20_1m FINAL
 WHERE datetime >= toDateTime({day:Date})
-  AND datetime < toDateTime({day:Date} + 1)
-ORDER BY datetime
+  AND datetime < toDateTime({day:Date}) + 86400
+ORDER BY minute_start

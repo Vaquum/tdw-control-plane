@@ -15,6 +15,12 @@ double-counted feed. Book minute coverage below
 the per-minute book capture is best-effort and a single missed minute must
 not suppress the whole feed.
 
+Every time field the sections carry (``bar_start``, ``minute_start``,
+``session_start``) is declared as UTC epoch seconds in the SQL itself via
+``toUnixTimestamp``, so the feed's time representation is part of the
+``btc_briefing/1`` contract rather than inherited from the server's Arrow
+serialization of ``DateTime``.
+
 The asset only builds and validates the feed; delivery is a separate slice.
 """
 

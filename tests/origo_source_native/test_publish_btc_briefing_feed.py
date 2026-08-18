@@ -18,7 +18,9 @@ from origo.assets.publish_btc_briefing_feed import (
 )
 
 DAY = date(2024, 1, 1)
+DAY_START_EPOCH = 1_704_067_200
 TRADES_IN_DAY = 4800
+REPLACED_MINUTE_MID_PRICE = 99999.0
 # Mirrors the trade generator in _insert_day_trades: trade n has quantity
 # 0.001 + (n % 7) * 0.00000001 BTC, i.e. exactly 100_000 + (n % 7) satoshis.
 # Computed in pure Python so the conservation test does not compare
@@ -116,6 +118,70 @@ def _insert_day_book_minutes(query_origo: Callable[[str], list[tuple[Any, ...]]]
     )
 
 
+def _insert_adjacent_day_rows(query_origo: Callable[[str], list[tuple[Any, ...]]]) -> None:
+    # One row per table on each side of the day, sitting exactly on or past
+    # the window edges. Every one of them must stay out of every section, so
+    # the assertions on counts and totals below double as proof that the
+    # day-window predicates in the SQL files are load-bearing.
+    for kline_datetime in ('2023-12-31 23:59:00', '2024-01-02 00:00:00'):
+        query_origo(
+            f"""
+            INSERT INTO binance_spot_klines
+                (datetime, open, high, low, close, mean, std, median, iqr, volume,
+                 maker_ratio, no_of_trades, open_liquidity, high_liquidity, low_liquidity,
+                 close_liquidity, liquidity_sum, maker_volume, maker_liquidity)
+            SELECT toDateTime('{kline_datetime}'), 1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 1.0,
+                   0.0, 1.0, 0.5, 1, 1.0, 1.0, 1.0, 1.0, 1.0, 0.5, 0.5
+            """
+        )
+    for trade_datetime in ('2023-12-31 23:59:59.999999', '2024-01-02 00:00:00.000000'):
+        query_origo(
+            f"""
+            INSERT INTO binance_daily_spot_trades
+                (trade_id, price, quantity, quote_quantity, timestamp,
+                 is_buyer_maker, is_best_match, datetime)
+            SELECT 999999999, 42000.0, 9.0, 378000.0, 0, 0, 1,
+                   toDateTime64('{trade_datetime}', 6)
+            """
+        )
+    for book_datetime in ('2023-12-31 23:59:00', '2024-01-02 00:00:00'):
+        query_origo(
+            f"""
+            INSERT INTO binance_spot_depth20_1m
+                (datetime, source_timestamp_ms, book_mid_price, book_spread_bps,
+                 book_bid_depth_20_notional, book_ask_depth_20_notional, book_imbalance_20)
+            SELECT toDateTime('{book_datetime}'), 1, 1.0, 1.0, 1.0, 1.0, 0.0
+            """
+        )
+
+
+def _insert_replaced_book_minute(query_origo: Callable[[str], list[tuple[Any, ...]]]) -> None:
+    # Re-insert the day's first minute with a higher ReplacingMergeTree
+    # version and a sentinel mid price: the feed must carry the replacement
+    # exactly once, which only holds if the book queries read FINAL.
+    query_origo(
+        f"""
+        INSERT INTO binance_spot_depth20_1m
+            (datetime, source_timestamp_ms, book_mid_price, book_spread_bps,
+             book_bid_depth_20_notional, book_ask_depth_20_notional, book_imbalance_20)
+        SELECT toDateTime('{DAY.isoformat()} 00:00:00'), {DAY_START_EPOCH * 1000 + 1},
+               {REPLACED_MINUTE_MID_PRICE}, 1.0, 1000000.0, 1000000.0, 0.0
+        """
+    )
+
+
+def _populate_complete_day(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _create_briefing_tables(origo_assets)
+    _insert_minute_klines(query_origo, 1440)
+    _insert_day_trades(query_origo)
+    _insert_day_book_minutes(query_origo)
+    _insert_adjacent_day_rows(query_origo)
+    _insert_replaced_book_minute(query_origo)
+
+
 def _build_feed_for_day(day: date) -> dict[str, Any]:
     client = _make_clickhouse_arrow_client()
     try:
@@ -154,10 +220,7 @@ def test_feed_contains_every_declared_section(
     origo_assets: dict[str, Any],
     query_origo: Callable[[str], list[tuple[Any, ...]]],
 ) -> None:
-    _create_briefing_tables(origo_assets)
-    _insert_minute_klines(query_origo, 1440)
-    _insert_day_trades(query_origo)
-    _insert_day_book_minutes(query_origo)
+    _populate_complete_day(origo_assets, query_origo)
 
     feed = _build_feed_for_day(DAY)
 
@@ -172,10 +235,7 @@ def test_bars_cover_the_day_with_no_short_bar(
     origo_assets: dict[str, Any],
     query_origo: Callable[[str], list[tuple[Any, ...]]],
 ) -> None:
-    _create_briefing_tables(origo_assets)
-    _insert_minute_klines(query_origo, 1440)
-    _insert_day_trades(query_origo)
-    _insert_day_book_minutes(query_origo)
+    _populate_complete_day(origo_assets, query_origo)
 
     feed = _build_feed_for_day(DAY)
 
@@ -189,10 +249,7 @@ def test_volume_at_price_conserves_in_integer_units(
     origo_assets: dict[str, Any],
     query_origo: Callable[[str], list[tuple[Any, ...]]],
 ) -> None:
-    _create_briefing_tables(origo_assets)
-    _insert_minute_klines(query_origo, 1440)
-    _insert_day_trades(query_origo)
-    _insert_day_book_minutes(query_origo)
+    _populate_complete_day(origo_assets, query_origo)
 
     feed = _build_feed_for_day(DAY)
     volume_at_price = feed['volume_at_price']
@@ -218,6 +275,71 @@ def test_incomplete_day_raises(
 
     with pytest.raises(RuntimeError, match='refusing to build a short briefing feed'):
         _build_feed_for_day(DAY)
+
+
+def test_time_fields_are_declared_epoch_seconds(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+
+    feed = _build_feed_for_day(DAY)
+
+    assert [bar['bar_start'] for bar in feed['bars_15m'][:2]] == [
+        DAY_START_EPOCH,
+        DAY_START_EPOCH + 900,
+    ]
+    assert feed['bars_1d'][0]['bar_start'] == DAY_START_EPOCH
+    assert feed['book_series'][0]['minute_start'] == DAY_START_EPOCH
+    assert [session['session_start'] for session in feed['book_sessions']] == [
+        DAY_START_EPOCH,
+        DAY_START_EPOCH + 28800,
+        DAY_START_EPOCH + 57600,
+    ]
+    assert all(
+        isinstance(value, int)
+        for bar in feed['bars_15m']
+        for value in [bar['bar_start']]
+    )
+
+
+def test_day_window_excludes_adjacent_day_rows(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    # _populate_complete_day plants rows on 2023-12-31 and 2024-01-02 in all
+    # three source tables, sitting exactly on the window edges: every count
+    # and total below only holds if each SQL file's day predicate excludes
+    # them.
+    _populate_complete_day(origo_assets, query_origo)
+
+    feed = _build_feed_for_day(DAY)
+
+    assert len(feed['bars_15m']) == 96
+    assert feed['bars_1d'][0]['source_minutes'] == 1440
+    assert sum(row['trades'] for row in feed['volume_at_price']) == TRADES_IN_DAY
+    assert sum(row['total_sats'] for row in feed['volume_at_price']) == EXPECTED_TOTAL_SATS
+    assert len(feed['book_series']) == 1440
+    assert [session['minutes'] for session in feed['book_sessions']] == [480, 480, 480]
+    assert all(row['minutes'] == 1440 for row in feed['book_percentiles'])
+
+
+def test_book_reads_collapse_replaced_minutes_via_final(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    # _populate_complete_day re-inserts the day's first minute with a higher
+    # ReplacingMergeTree version and a sentinel mid price: the series must
+    # carry the replacement exactly once, and the session and percentile
+    # minute counts must not count the superseded row.
+    _populate_complete_day(origo_assets, query_origo)
+
+    feed = _build_feed_for_day(DAY)
+
+    assert len(feed['book_series']) == 1440
+    assert feed['book_series'][0]['book_mid_price'] == REPLACED_MINUTE_MID_PRICE
+    assert [session['minutes'] for session in feed['book_sessions']] == [480, 480, 480]
+    assert all(row['minutes'] == 1440 for row in feed['book_percentiles'])
 
 
 def test_duplicated_minute_cannot_mask_a_missing_one(
