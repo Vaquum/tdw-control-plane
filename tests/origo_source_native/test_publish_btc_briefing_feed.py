@@ -1,20 +1,25 @@
 from __future__ import annotations
 
+import hashlib
 import importlib
 import inspect
+import json
 from collections.abc import Callable
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import pytest
 from dagster import materialize
 
 import origo.assets.publish_btc_briefing_feed as publish_btc_briefing_feed_module
+from origo.assets.daily_trades_to_origo import daily_partitions
 from origo.assets.publish_btc_briefing_feed import (
     FEED_SECTIONS,
     FEED_VERSION,
     _make_clickhouse_arrow_client,
     build_briefing_feed,
+    publish_briefing_feed_to_huggingface,
 )
 
 DAY = date(2024, 1, 1)
@@ -378,3 +383,115 @@ def test_job_is_registered_in_definitions() -> None:
     assert 'publish_btc_briefing_feed_job' in [
         job.name for job in definitions_module.defs.jobs
     ]
+
+
+def _install_recording_hf_api(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    uploaded: dict[str, Any] = {}
+
+    class RecordingHfApi:
+        def __init__(self, token: str) -> None:
+            uploaded['token'] = token
+
+        def create_repo(self, *, repo_id: str, repo_type: str, exist_ok: bool) -> None:
+            uploaded['repo_id'] = repo_id
+            uploaded['repo_type'] = repo_type
+            uploaded['exist_ok'] = exist_ok
+
+        def upload_folder(
+            self,
+            *,
+            folder_path: str,
+            repo_id: str,
+            repo_type: str,
+            commit_message: str,
+        ) -> None:
+            folder = Path(folder_path)
+            uploaded['upload_repo_id'] = repo_id
+            uploaded['commit_message'] = commit_message
+            uploaded['files'] = sorted(path.name for path in folder.iterdir())
+            uploaded['latest'] = json.loads((folder / 'latest.json').read_text())
+            uploaded['readme'] = (folder / 'README.md').read_text()
+            feed_file = uploaded['latest']['file_name']
+            uploaded['feed_bytes'] = (folder / feed_file).read_bytes()
+
+    monkeypatch.setattr(publish_btc_briefing_feed_module, 'HfApi', RecordingHfApi)
+    return uploaded
+
+
+def test_asset_is_daily_partitioned() -> None:
+    assert (
+        publish_btc_briefing_feed_module.publish_btc_briefing_feed.partitions_def
+        is daily_partitions
+    )
+
+
+def test_sensor_is_registered_in_definitions() -> None:
+    definitions_module = importlib.import_module('origo.definitions')
+    assert any(
+        sensor.name == 'publish_btc_briefing_feed_sensor'
+        for sensor in definitions_module.defs.sensors
+    )
+
+
+def test_publish_uploads_feed_snapshot_with_latest_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+    feed = _build_feed_for_day(DAY)
+    uploaded = _install_recording_hf_api(monkeypatch)
+
+    result = publish_briefing_feed_to_huggingface(
+        feed, repo_id='test/btc-briefing', token='test-token'
+    )
+
+    assert uploaded['token'] == 'test-token'
+    assert uploaded['repo_id'] == 'test/btc-briefing'
+    assert uploaded['upload_repo_id'] == 'test/btc-briefing'
+    assert uploaded['repo_type'] == 'dataset'
+    assert uploaded['files'] == ['README.md', 'btc_briefing_20240101.json', 'latest.json']
+    assert json.loads(uploaded['feed_bytes']) == feed
+    assert result['file_name'] == 'btc_briefing_20240101.json'
+    assert result['sha256'] == hashlib.sha256(uploaded['feed_bytes']).hexdigest()
+
+
+def test_latest_pointer_declares_version_and_day(
+    monkeypatch: pytest.MonkeyPatch,
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+    feed = _build_feed_for_day(DAY)
+    uploaded = _install_recording_hf_api(monkeypatch)
+
+    publish_briefing_feed_to_huggingface(
+        feed, repo_id='test/btc-briefing', token='test-token'
+    )
+
+    assert uploaded['latest']['feed_version'] == 'btc_briefing/1'
+    assert uploaded['latest']['day'] == DAY.isoformat()
+    assert uploaded['latest']['file_name'] == 'btc_briefing_20240101.json'
+    assert (
+        uploaded['latest']['sha256']
+        == hashlib.sha256(uploaded['feed_bytes']).hexdigest()
+    )
+
+
+def test_backfill_partition_publishes_that_day(
+    monkeypatch: pytest.MonkeyPatch,
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+    uploaded = _install_recording_hf_api(monkeypatch)
+    monkeypatch.setenv('HF_TOKEN', 'test-token')
+
+    result = materialize(
+        [publish_btc_briefing_feed_module.publish_btc_briefing_feed],
+        partition_key=DAY.isoformat(),
+    )
+
+    assert result.success
+    assert uploaded['latest']['day'] == DAY.isoformat()
+    assert uploaded['latest']['file_name'] == 'btc_briefing_20240101.json'
