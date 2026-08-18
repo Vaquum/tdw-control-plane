@@ -520,6 +520,28 @@ def test_backfill_of_older_day_does_not_move_latest_pointer(
     assert result['latest_updated'] is False
 
 
+def test_same_day_republish_refreshes_latest_pointer(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _populate_complete_day(origo_assets, query_origo)
+    feed = _build_feed_for_day(DAY)
+    uploaded = _install_recording_hf_api(
+        monkeypatch,
+        tmp_path,
+        existing_latest={'feed_version': FEED_VERSION, 'day': DAY.isoformat()},
+    )
+
+    result = publish_briefing_feed_to_huggingface(
+        feed, repo_id='test/btc-briefing', token='test-token'
+    )
+
+    assert result['latest_updated'] is True
+    assert uploaded['latest']['sha256'] == hashlib.sha256(uploaded['feed_bytes']).hexdigest()
+
+
 def test_newer_day_advances_latest_pointer(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

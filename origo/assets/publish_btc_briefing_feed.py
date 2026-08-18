@@ -284,10 +284,11 @@ def publish_briefing_feed_to_huggingface(
 
     Writes ``btc_briefing_<yyyymmdd>.json`` and uploads it in one commit; past
     day files are left in place, so the dataset accumulates one file per
-    published day. The ``latest.json`` pointer and the dataset card are only
-    rewritten when this day advances past the day the dataset currently points
-    at, so backfilling an older partition never repoints ``latest`` at a stale
-    day.
+    published day. The ``latest.json`` pointer and the dataset card are
+    rewritten only when this day is at least the day the dataset currently
+    points at: backfilling an older partition never repoints ``latest`` at a
+    stale day, while re-publishing the pointed-at day refreshes the pointer so
+    its checksum always matches the current bytes of the file it names.
     """
     raw_day = feed['day']
     if not isinstance(raw_day, str):
@@ -301,7 +302,7 @@ def publish_briefing_feed_to_huggingface(
 
     api = _make_hf_api(token)
     latest_day = _published_latest_day(api, repo_id)
-    advance_latest = latest_day is None or published_day > latest_day
+    advance_latest = latest_day is None or published_day >= latest_day
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp_path = Path(tmp_dir)
