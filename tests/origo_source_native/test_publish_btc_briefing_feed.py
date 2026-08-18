@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import importlib
 import inspect
+from collections.abc import Callable
 from datetime import date
-from typing import Any, Callable
+from typing import Any
 
 import pytest
 from dagster import materialize
@@ -18,7 +19,11 @@ from origo.assets.publish_btc_briefing_feed import (
 
 DAY = date(2024, 1, 1)
 TRADES_IN_DAY = 4800
-SATS_PER_BTC = 100_000_000
+# Mirrors the trade generator in _insert_day_trades: trade n has quantity
+# 0.001 + (n % 7) * 0.00000001 BTC, i.e. exactly 100_000 + (n % 7) satoshis.
+# Computed in pure Python so the conservation test does not compare
+# ClickHouse rounding against itself.
+EXPECTED_TOTAL_SATS = sum(100_000 + n % 7 for n in range(TRADES_IN_DAY))
 
 
 def _create_briefing_tables(origo_assets: dict[str, Any]) -> None:
@@ -33,7 +38,11 @@ def _create_briefing_tables(origo_assets: dict[str, Any]) -> None:
     assert result.success
 
 
-def _insert_minute_klines(query_origo: Callable[[str], list[tuple[Any, ...]]], minutes: int) -> None:
+def _insert_minute_klines(
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+    minutes: int,
+    first_minute: int = 0,
+) -> None:
     query_origo(
         f"""
         INSERT INTO binance_spot_klines
@@ -60,7 +69,7 @@ def _insert_minute_klines(query_origo: Callable[[str], list[tuple[Any, ...]]], m
             1000.0 AS liquidity_sum,
             1.25 AS maker_volume,
             500.0 AS maker_liquidity
-        FROM numbers({minutes})
+        FROM numbers({first_minute}, {minutes})
         """
     )
 
@@ -194,10 +203,7 @@ def test_volume_at_price_conserves_in_integer_units(
         assert isinstance(row['total_sats'], int)
         assert row['taker_buy_sats'] + row['taker_sell_sats'] == row['total_sats']
 
-    expected_total_sats = query_origo(
-        f'SELECT sum(toUInt64(round(quantity * {SATS_PER_BTC}))) FROM binance_daily_spot_trades'
-    )[0][0]
-    assert sum(row['total_sats'] for row in volume_at_price) == expected_total_sats
+    assert sum(row['total_sats'] for row in volume_at_price) == EXPECTED_TOTAL_SATS
     assert sum(row['trades'] for row in volume_at_price) == TRADES_IN_DAY
 
 
@@ -211,6 +217,37 @@ def test_incomplete_day_raises(
     _insert_day_book_minutes(query_origo)
 
     with pytest.raises(RuntimeError, match='refusing to build a short briefing feed'):
+        _build_feed_for_day(DAY)
+
+
+def test_duplicated_minute_cannot_mask_a_missing_one(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _create_briefing_tables(origo_assets)
+    # Minute 1439 is missing and minute 1425 is duplicated, so the last 15m
+    # bar holds 15 rows but only 14 distinct minutes: a plain count() would
+    # report it complete while double counting the duplicate.
+    _insert_minute_klines(query_origo, 1439)
+    _insert_minute_klines(query_origo, 1, first_minute=1425)
+    _insert_day_trades(query_origo)
+    _insert_day_book_minutes(query_origo)
+
+    with pytest.raises(RuntimeError, match='refusing to build a short briefing feed'):
+        _build_feed_for_day(DAY)
+
+
+def test_duplicated_minute_alone_raises(
+    origo_assets: dict[str, Any],
+    query_origo: Callable[[str], list[tuple[Any, ...]]],
+) -> None:
+    _create_briefing_tables(origo_assets)
+    _insert_minute_klines(query_origo, 1440)
+    _insert_minute_klines(query_origo, 1, first_minute=1425)
+    _insert_day_trades(query_origo)
+    _insert_day_book_minutes(query_origo)
+
+    with pytest.raises(RuntimeError, match='duplicated 1m source rows'):
         _build_feed_for_day(DAY)
 
 
