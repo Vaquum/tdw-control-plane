@@ -1230,6 +1230,21 @@ def publish_binance_spot_240M_dollar_klines_to_huggingface_sensor(
     )
 
 
+@asset_sensor(
+    asset_key=AssetKey("refresh_binance_spot_klines_origo"),
+    job=publish_btc_briefing_feed_job,
+    default_status=DefaultSensorStatus.RUNNING,
+)
+def publish_btc_briefing_feed_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_binance_spot_klines_to_hf_run_request(
+        asset_event,
+        run_key_prefix="publish_btc_briefing_feed",
+    )
+
+
 def _bar_store_on_mirror_success(context: RunStatusSensorContext) -> list[RunRequest]:
     """When the Parquet mirror job succeeds, rebuild every Arrow series.
 
@@ -1359,6 +1374,7 @@ defs = Definitions(
         publish_binance_spot_60M_dollar_klines_to_huggingface_sensor,
         publish_binance_spot_120M_dollar_klines_to_huggingface_sensor,
         publish_binance_spot_240M_dollar_klines_to_huggingface_sensor,
+        publish_btc_briefing_feed_sensor,
         bar_store_source_sensor,
         depth_snapshot_store_source_sensor,
     ],

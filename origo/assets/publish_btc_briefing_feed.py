@@ -21,17 +21,26 @@ Every time field the sections carry (``bar_start``, ``minute_start``,
 ``btc_briefing/1`` contract rather than inherited from the server's Arrow
 serialization of ``DateTime``.
 
-The asset only builds and validates the feed; delivery is a separate slice.
+The asset is daily-partitioned: each partition builds, validates and
+publishes that day's feed to the ``vaquum/btc_briefing_feed`` HuggingFace
+dataset as one JSON file per day plus a ``latest.json`` pointer, following
+the snapshot pattern of the kline publishers.
 """
 
+import hashlib
+import json
 import os
+import tempfile
 from collections.abc import Mapping
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from importlib import import_module
 from pathlib import Path
 from typing import Final, Protocol, cast
 
 from dagster import AssetExecutionContext, asset
+from huggingface_hub import HfApi
+
+from .daily_trades_to_origo import daily_partitions
 
 FEED_VERSION: Final[str] = 'btc_briefing/1'
 FEED_SECTIONS: Final[tuple[str, ...]] = (
@@ -48,6 +57,7 @@ BARS_1D_SECONDS = 86400
 MINUTES_PER_DAY = 1440
 BARS_15M_PER_DAY = 96
 DEFAULT_CLICKHOUSE_HTTP_PORT = 8123
+BRIEFING_DATASET_REPO_ID = 'vaquum/btc_briefing_feed'
 
 _SQL_DIR = Path(__file__).parent / 'sql'
 
@@ -196,24 +206,174 @@ def build_briefing_feed(
     }
 
 
+def _get_huggingface_token() -> str:
+    token = os.environ.get('HF_TOKEN') or os.environ.get('HUGGINGFACE_HUB_TOKEN')
+    if not token:
+        raise RuntimeError(
+            'HF_TOKEN or HUGGINGFACE_HUB_TOKEN must be set before publishing to Hugging Face.'
+        )
+    return token
+
+
+def _build_dataset_card(*, day: str, file_name: str, sha256: str) -> str:
+    return f"""# BTC daily briefing feed
+
+One `{FEED_VERSION}` feed file per UTC day, built from the origo ClickHouse
+tables: 15m/1d OHLCV bars, measured volume-at-price in integer satoshis split
+by taker side, and per-minute series, exact daily percentiles and 8h session
+aggregates of the depth20 book. Time fields are UTC epoch seconds.
+
+Latest snapshot:
+
+- file: `{file_name}`
+- day: `{day}`
+- sha256: `{sha256}`
+"""
+
+
+class _HfApiProtocol(Protocol):
+    def repo_exists(self, *, repo_id: str, repo_type: str) -> bool:
+        raise NotImplementedError
+
+    def file_exists(self, *, repo_id: str, filename: str, repo_type: str) -> bool:
+        raise NotImplementedError
+
+    def hf_hub_download(self, *, repo_id: str, filename: str, repo_type: str) -> str:
+        raise NotImplementedError
+
+    def create_repo(self, *, repo_id: str, repo_type: str, exist_ok: bool) -> None:
+        raise NotImplementedError
+
+    def upload_folder(
+        self,
+        *,
+        folder_path: str,
+        repo_id: str,
+        repo_type: str,
+        commit_message: str,
+    ) -> None:
+        raise NotImplementedError
+
+
+def _make_hf_api(token: str) -> _HfApiProtocol:
+    return cast(_HfApiProtocol, HfApi(token=token))
+
+
+def _published_latest_day(api: _HfApiProtocol, repo_id: str) -> date | None:
+    """The day named by the dataset's current ``latest.json``, or None before the first publish."""
+    if not api.repo_exists(repo_id=repo_id, repo_type='dataset'):
+        return None
+    if not api.file_exists(repo_id=repo_id, filename='latest.json', repo_type='dataset'):
+        return None
+    latest_path = api.hf_hub_download(
+        repo_id=repo_id, filename='latest.json', repo_type='dataset'
+    )
+    latest_raw: object = json.loads(Path(latest_path).read_text(encoding='utf-8'))
+    if not isinstance(latest_raw, dict):
+        raise RuntimeError(f'{repo_id} latest.json is not a JSON object.')
+    latest_day = cast(dict[str, object], latest_raw).get('day')
+    if not isinstance(latest_day, str):
+        raise RuntimeError(f'{repo_id} latest.json does not carry a day string.')
+    return date.fromisoformat(latest_day)
+
+
+def publish_briefing_feed_to_huggingface(
+    feed: Mapping[str, object], *, repo_id: str, token: str
+) -> dict[str, object]:
+    """Upload one day's feed dict to the HuggingFace dataset ``repo_id``.
+
+    Writes ``btc_briefing_<yyyymmdd>.json`` and uploads it in one commit; past
+    day files are left in place, so the dataset accumulates one file per
+    published day. The ``latest.json`` pointer and the dataset card are
+    rewritten only when this day is at least the day the dataset currently
+    points at: backfilling an older partition never repoints ``latest`` at a
+    stale day, while re-publishing the pointed-at day refreshes the pointer so
+    its checksum always matches the current bytes of the file it names.
+    """
+    raw_day = feed['day']
+    if not isinstance(raw_day, str):
+        raise RuntimeError(f'Feed day must be an ISO date string, got {raw_day!r}.')
+    published_day = date.fromisoformat(raw_day)
+    day = published_day.isoformat()
+
+    file_name = f'btc_briefing_{day.replace("-", "")}.json'
+    feed_bytes = (json.dumps(feed, sort_keys=True) + '\n').encode('utf-8')
+    sha256 = hashlib.sha256(feed_bytes).hexdigest()
+
+    api = _make_hf_api(token)
+    latest_day = _published_latest_day(api, repo_id)
+    advance_latest = latest_day is None or published_day >= latest_day
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
+        (tmp_path / file_name).write_bytes(feed_bytes)
+        if advance_latest:
+            (tmp_path / 'latest.json').write_text(
+                json.dumps(
+                    {
+                        'feed_version': FEED_VERSION,
+                        'day': day,
+                        'file_name': file_name,
+                        'sha256': sha256,
+                        'generated_at_utc': datetime.now(UTC).isoformat(),
+                    },
+                    indent=2,
+                )
+                + '\n',
+                encoding='utf-8',
+            )
+            (tmp_path / 'README.md').write_text(
+                _build_dataset_card(day=day, file_name=file_name, sha256=sha256),
+                encoding='utf-8',
+            )
+
+        api.create_repo(repo_id=repo_id, repo_type='dataset', exist_ok=True)
+        api.upload_folder(
+            folder_path=str(tmp_path),
+            repo_id=repo_id,
+            repo_type='dataset',
+            commit_message=f'Add {FEED_VERSION} feed for {day}',
+        )
+
+    return {
+        'repo_id': repo_id,
+        'file_name': file_name,
+        'day': day,
+        'sha256': sha256,
+        'latest_updated': advance_latest,
+    }
+
+
 @asset(
     name='publish_btc_briefing_feed',
+    partitions_def=daily_partitions,
     group_name='binance_data',
     description=(
-        'Builds and validates the daily BTC briefing feed (btc_briefing/1) from the '
-        'origo ClickHouse tables for the last complete UTC day.'
+        'Builds, validates and publishes the daily BTC briefing feed '
+        '(btc_briefing/1) for the partition day from the origo ClickHouse tables '
+        'to the vaquum/btc_briefing_feed HuggingFace dataset.'
     ),
 )
-def publish_btc_briefing_feed(context: AssetExecutionContext) -> None:
-    day = datetime.now(UTC).date() - timedelta(days=1)
+def publish_btc_briefing_feed(context: AssetExecutionContext) -> dict[str, object]:
+    day = date.fromisoformat(context.partition_key)
     client = _make_clickhouse_arrow_client()
     try:
         feed = build_briefing_feed(client, day)
     finally:
         client.close()
 
+    result = publish_briefing_feed_to_huggingface(
+        feed,
+        repo_id=BRIEFING_DATASET_REPO_ID,
+        token=_get_huggingface_token(),
+    )
+
     section_counts = {
         section_name: len(cast(list[dict[str, object]], feed[section_name]))
         for section_name in FEED_SECTIONS
     }
-    context.log.info(f'Built {FEED_VERSION} feed for {day.isoformat()}: {section_counts}.')
+    context.log.info(
+        f'Published {FEED_VERSION} feed for {day.isoformat()} to '
+        f'{BRIEFING_DATASET_REPO_ID}: {section_counts}.'
+    )
+    return result
