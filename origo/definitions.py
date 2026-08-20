@@ -82,6 +82,7 @@ from .assets.publish_binance_spot_240M_dollar_klines_to_huggingface import (
     publish_binance_spot_240M_dollar_klines_to_huggingface,
 )
 from .assets.publish_btc_briefing_feed import publish_btc_briefing_feed
+from .assets.publish_btc_briefing_history import publish_btc_briefing_history
 from .assets.create_origo_database import (
     create_origo_database,
     get_clickhouse_settings as get_origo_clickhouse_settings,
@@ -529,6 +530,10 @@ publish_binance_spot_240M_dollar_klines_to_huggingface_job = define_asset_job(
 publish_btc_briefing_feed_job = define_asset_job(
     name="publish_btc_briefing_feed_job",
     selection=["publish_btc_briefing_feed"])
+
+publish_btc_briefing_history_job = define_asset_job(
+    name="publish_btc_briefing_history_job",
+    selection=["publish_btc_briefing_history"])
 
 # Local Parquet Mirror Jobs
 
@@ -1245,6 +1250,42 @@ def publish_btc_briefing_feed_sensor(
     )
 
 
+def _publish_btc_briefing_history_run_request(
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    """Republish the rolling history for the day whose briefing feed just landed.
+
+    The history covers the span before its partition day and the feed file for
+    that day continues it, so the two are only consistent when the history is
+    rebuilt off the feed's own materialization rather than off a second clock.
+    """
+    if not asset_event.dagster_event:
+        return SkipReason(
+            "No Dagster event was attached to the BTC briefing feed materialization."
+        )
+
+    partition_key = asset_event.dagster_event.partition
+    if partition_key is None:
+        return SkipReason("BTC briefing feed materialization did not include a partition key.")
+
+    return RunRequest(
+        partition_key=partition_key,
+        run_key=f"publish_btc_briefing_history::{partition_key}",
+    )
+
+
+@asset_sensor(
+    asset_key=AssetKey("publish_btc_briefing_feed"),
+    job=publish_btc_briefing_history_job,
+    default_status=DefaultSensorStatus.RUNNING,
+)
+def publish_btc_briefing_history_sensor(
+    context: object,
+    asset_event: _AssetEventLike,
+) -> RunRequest | SkipReason:
+    return _publish_btc_briefing_history_run_request(asset_event)
+
+
 def _bar_store_on_mirror_success(context: RunStatusSensorContext) -> list[RunRequest]:
     """When the Parquet mirror job succeeds, rebuild every Arrow series.
 
@@ -1342,6 +1383,7 @@ defs = Definitions(
             publish_binance_spot_120M_dollar_klines_to_huggingface,
             publish_binance_spot_240M_dollar_klines_to_huggingface,
             publish_btc_briefing_feed,
+            publish_btc_briefing_history,
             *MOUNT_EXPORT_ASSETS,
             build_bar_store_arrow,
             build_depth_snapshot_store_arrow],
@@ -1375,6 +1417,7 @@ defs = Definitions(
         publish_binance_spot_120M_dollar_klines_to_huggingface_sensor,
         publish_binance_spot_240M_dollar_klines_to_huggingface_sensor,
         publish_btc_briefing_feed_sensor,
+        publish_btc_briefing_history_sensor,
         bar_store_source_sensor,
         depth_snapshot_store_source_sensor,
     ],
@@ -1420,6 +1463,7 @@ defs = Definitions(
           publish_binance_spot_120M_dollar_klines_to_huggingface_job,
           publish_binance_spot_240M_dollar_klines_to_huggingface_job,
           publish_btc_briefing_feed_job,
+          publish_btc_briefing_history_job,
           publish_binance_spot_klines_to_mount_job,
           backfill_binance_spot_klines_to_mount_job,
           build_bar_store_arrow_job,
