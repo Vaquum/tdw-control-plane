@@ -1,3 +1,6 @@
+# v3.5.1 on August 20, 2026
+- Record `require_extra_approval_for_unattributed_changes` in the `Protect-Main` ruleset snapshot. GitHub added the field to the rulesets API, so the live ruleset began reporting it while `.github/rulesets/main.json` did not carry it, and `pr_checks_ruleset` failed every open PR on drift it had not caused. The snapshot now matches the live ruleset field for field, which is the only state in which that gate can tell a real out-of-band change from an API addition.
+
 # v3.5.0 on August 18, 2026
 - Publish the daily BTC briefing feed to HuggingFace on the daily cadence: `publish_btc_briefing_feed` becomes daily-partitioned and uploads each partition day's `btc_briefing/1` feed to the `vaquum/btc_briefing_feed` dataset as one JSON file per day plus a `latest.json` pointer and dataset card (reusing the existing `HF_TOKEN` credential; no new secret). A new `publish_btc_briefing_feed_sensor` fires after each daily spot klines materialization, so the first tick after deploy publishes the most recent complete UTC day and any past covered day is a manual partition launch.
 
