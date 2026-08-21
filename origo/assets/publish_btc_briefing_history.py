@@ -271,7 +271,19 @@ def _published_through_day(api: _HfApiProtocol, repo_id: str) -> date | None:
     published_raw: object = json.loads(Path(published_path).read_text(encoding='utf-8'))
     if not isinstance(published_raw, dict):
         raise RuntimeError(f'{repo_id} {HISTORY_FILE_NAME} is not a JSON object.')
-    published_day = cast(dict[str, object], published_raw).get('through_day')
+    published = cast(dict[str, object], published_raw)
+    # The version is checked before the day is trusted. This guard decides whether
+    # a freshly built window may replace the published one, so reading a
+    # through_day out of a payload written under some other contract -- an older
+    # schema, a hand edit, a different producer -- would answer that question
+    # from a field that need not mean what this code assumes.
+    published_version = published.get('version')
+    if published_version != HISTORY_VERSION:
+        raise RuntimeError(
+            f'{repo_id} {HISTORY_FILE_NAME} declares version {published_version!r}, '
+            f'not {HISTORY_VERSION!r}.'
+        )
+    published_day = published.get('through_day')
     if not isinstance(published_day, str):
         raise RuntimeError(f'{repo_id} {HISTORY_FILE_NAME} does not carry a through_day string.')
     return date.fromisoformat(published_day)

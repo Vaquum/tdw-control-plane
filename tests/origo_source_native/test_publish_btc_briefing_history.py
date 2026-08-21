@@ -494,6 +494,43 @@ def test_published_through_day_reads_the_rolling_file(
     assert uploaded['read_file_name'] == HISTORY_FILE_NAME
 
 
+def test_a_published_file_under_another_contract_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """The staleness guard must not read a day out of a payload it does not know.
+
+    Whether a freshly built window may replace the published one is decided from
+    this file. A payload written under another contract may carry a through_day
+    that means something else, so trusting it would answer the question from the
+    wrong field rather than failing.
+    """
+    _install_recording_hf_api(
+        monkeypatch,
+        tmp_path,
+        published={'version': 'btc_briefing_history/0', 'through_day': '2099-01-01'},
+    )
+    api = publish_btc_briefing_history_module._make_hf_api('test-token')
+
+    with pytest.raises(RuntimeError, match="declares version 'btc_briefing_history/0'"):
+        publish_btc_briefing_history_module._published_through_day(api, 'test/btc-briefing')
+
+
+def test_a_published_file_with_no_version_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _install_recording_hf_api(
+        monkeypatch,
+        tmp_path,
+        published={'through_day': '2099-01-01'},
+    )
+    api = publish_btc_briefing_history_module._make_hf_api('test-token')
+
+    with pytest.raises(RuntimeError, match='declares version None'):
+        publish_btc_briefing_history_module._published_through_day(api, 'test/btc-briefing')
+
+
 def test_publish_uploads_one_rolling_file(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
