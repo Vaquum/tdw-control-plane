@@ -90,5 +90,5 @@ def test_a_partitionless_materialization_is_skipped() -> None:
     assert all(isinstance(result, SkipReason) for result in missing_partition)
 
 
-def test_sensor_inventory_is_unchanged() -> None:
+def test_sensor_count_is_unchanged() -> None:
     assert len(defs.sensors) == 16
