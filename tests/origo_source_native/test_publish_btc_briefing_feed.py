@@ -478,6 +478,17 @@ def test_asset_is_daily_partitioned() -> None:
     )
 
 
+def test_dataset_card_scopes_the_contract_to_each_file() -> None:
+    card = publish_btc_briefing_feed_module._build_dataset_card(
+        day=DAY.isoformat(),
+        file_name='btc_briefing_20240101.json',
+        sha256='abc123',
+    )
+
+    assert 'historical files keep the contract under which they were' in card
+    assert f'latest snapshot uses `{FEED_VERSION}`' in card
+
+
 def test_sensor_is_registered_in_definitions() -> None:
     definitions_module = importlib.import_module('origo.definitions')
     assert any(

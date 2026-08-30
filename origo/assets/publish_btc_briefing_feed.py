@@ -218,10 +218,14 @@ def _get_huggingface_token() -> str:
 def _build_dataset_card(*, day: str, file_name: str, sha256: str) -> str:
     return f"""# BTC daily briefing feed
 
-One `{FEED_VERSION}` feed file per UTC day, built from the origo ClickHouse
+This dataset retains one JSON file per published UTC day. Read each file's
+`feed_version`; historical files keep the contract under which they were
+published.
+
+The latest snapshot uses `{FEED_VERSION}` and is built from the origo ClickHouse
 tables: 15m/1d OHLCV bars, measured volume-at-price in integer satoshis split
 by taker side, and per-minute series, exact daily percentiles and 8h session
-aggregates of the depth200 book. Time fields are UTC epoch seconds.
+aggregates of the depth200 book. Its time fields are UTC epoch seconds.
 
 Latest snapshot:
 
